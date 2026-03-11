@@ -315,11 +315,45 @@ class LiquidNeuralNet(nn.Module):
         new_state = state + dt * dx
         return new_state.clamp(-5.0, 5.0)
 
+    def _dopri5_step(self, state: torch.Tensor, parent_input: torch.Tensor,
+                     var_idx: int, dt: float) -> torch.Tensor:
+        """Dormand-Prince 5th order integration step."""
+        # Butcher tableau coefficients
+        k1 = self._ode_fn(state, parent_input, var_idx)
+
+        k2 = self._ode_fn(state + dt * (1/5) * k1, parent_input, var_idx)
+
+        k3 = self._ode_fn(
+            state + dt * (3/40 * k1 + 9/40 * k2), parent_input, var_idx)
+
+        k4 = self._ode_fn(
+            state + dt * (44/45 * k1 - 56/15 * k2 + 32/9 * k3),
+            parent_input, var_idx)
+
+        k5 = self._ode_fn(
+            state + dt * (19372/6561 * k1 - 25360/2187 * k2
+                          + 64448/6561 * k3 - 212/729 * k4),
+            parent_input, var_idx)
+
+        k6 = self._ode_fn(
+            state + dt * (9017/3168 * k1 - 355/33 * k2 + 46732/5247 * k3
+                          + 49/176 * k4 - 5103/18656 * k5),
+            parent_input, var_idx)
+
+        # 5th order solution
+        new_state = state + dt * (
+            35/384 * k1 + 500/1113 * k3 + 125/192 * k4
+            - 2187/6784 * k5 + 11/84 * k6
+        )
+        return new_state.clamp(-5.0, 5.0)
+
     def _integrate_step(self, state: torch.Tensor, parent_input: torch.Tensor,
                         var_idx: int, dt: float) -> torch.Tensor:
         """Integration step using configured method."""
         if self.config.liquid_method == "rk4":
             return self._rk4_step(state, parent_input, var_idx, dt)
+        elif self.config.liquid_method == "dopri5":
+            return self._dopri5_step(state, parent_input, var_idx, dt)
         else:
             return self._euler_step(state, parent_input, var_idx, dt)
 
