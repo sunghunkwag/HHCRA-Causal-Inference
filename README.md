@@ -22,41 +22,39 @@ flowchart TB
     %% Nodes
     Obs([Sensor Observations / Env State])
     
-    subgraph Reasoning ["<b>Layer 3: Top-Down Reasoning & Orchestration</b>"]
-        direction LR
-        NSE["<b>Neuro-Symbolic Engine</b><br/><i>do-calculus & Counterfactuals</i>"]
-        HRM["<b>HRM</b><br/><i>GRU + Adaptive Computation</i>"]
+    subgraph L3 ["Layer 3: Top-Down Reasoning"]
+        NSE["Neuro-Symbolic Engine (do-calculus & Counterfactuals)"]
+        HRM["HRM (GRU + Adaptive Computation)"]
         NSE <==> HRM
     end
 
-    subgraph Mechanism ["<b>Layer 2: Structural Dynamics & Causal Mechanisms</b>"]
-        direction LR
-        GNN["<b>Causal GNN</b><br/><i>NOTEARS Continuous Optimization</i>"]
-        LNN["<b>Liquid Neural Net</b><br/><i>Neural ODE (RK4 Solver)</i>"]
+    subgraph L2 ["Layer 2: Mechanism & Dynamics"]
+        GNN["Causal GNN (NOTEARS Optimization)"]
+        LNN["Liquid Neural Net (Neural ODE)"]
         GNN <==> LNN
     end
 
-    subgraph Perception ["<b>Layer 1: Latent Causal Representation</b>"]
-        CJEPA["<b>C-JEPA</b><br/><i>Slot Attention & Temporal Smoothing</i>"]
+    subgraph L1 ["Layer 1: Latent Representation"]
+        CJEPA["C-JEPA (Slot Attention)"]
     end
 
     %% High-level Flow
-    Obs ==> Perception
-    Perception -- "<b>Gradient Isolation</b><br/>Latent Variable Slots" --> Mechanism
-    Mechanism -- "<b>Gradient Isolation</b><br/>Structural Trajectories" --> Reasoning
+    Obs ==> L1
+    L1 -- "Stop-Gradient (Latent Slots)" --> L2
+    L2 -- "Stop-Gradient (Structural Trajectories)" --> L3
     
     %% Feedback Loops
-    Reasoning -. "Diagnostic Revision" .-> Mechanism
-    Mechanism -. "Granularity Adjustment" .-> Perception
+    L3 -. "Diagnostic Feedback" .-> L2
+    L2 -. "Granularity Feedback" .-> L1
 
     %% Queries
-    Query{{"<b>Causal Query</b><br/><i>Rung 1, 2, or 3</i>"}} -.-> Reasoning
-    Reasoning --> Result([Causal Inference Result])
+    Query{{"Causal Query (Rungs 1-3)"}} -.-> L3
+    L3 --> Result([Inference Result])
 
     %% Styling
-    style Reasoning fill:#fff4dd,stroke:#d4a017,stroke-width:2px
-    style Mechanism fill:#e7f2ff,stroke:#005bb7,stroke-width:2px
-    style Perception fill:#f0fdf4,stroke:#166534,stroke-width:2px
+    style L3 fill:#fff4dd,stroke:#d4a017,stroke-width:2px
+    style L2 fill:#e7f2ff,stroke:#005bb7,stroke-width:2px
+    style L1 fill:#f0fdf4,stroke:#166534,stroke-width:2px
     style Query fill:#fefce8,stroke:#ca8a04,stroke-width:2px
 ```
 
