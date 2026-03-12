@@ -6,14 +6,47 @@ A three-layer neuro-symbolic framework for Structural Causal Model (SCM) estimat
 
 HHCRA implements a modular decomposition of SCM components into differentiable and symbolic modules. The architecture is designed for staged training with gradient isolation between hierarchical layers.
 
+### Formal Definition
+
+The architecture is grounded in the Structural Causal Model (SCM) framework:
+$M = \langle V, U, F, P(u) \rangle$
+- **$V$**: Endogenous variables (Layer 1 features).
+- **$U$**: Exogenous noise variables (stochastic components).
+- **$F$**: Set of structural equations (Layer 2 Liquid Dynamics).
+- **$G$**: Causal DAG directed by NOTEARS optimization.
+
+### Architecture Topology
+
+```mermaid
+graph TD
+    subgraph L3 ["Layer 3: Reasoning"]
+        NSE["Neuro-Symbolic Engine"]
+        HRM["Hierarchical Reasoning Module"]
+        NSE <--> HRM
+    end
+
+    subgraph L2 ["Layer 2: Mechanism"]
+        GNN["Causal GNN (NOTEARS)"]
+        LNN["Liquid Neural Network (ODE)"]
+        GNN <--> LNN
+    end
+
+    subgraph L1 ["Layer 1: Perception"]
+        CJEPA["C-JEPA (Slot Attention)"]
+    end
+
+    L3 -- ".detach() & Feedback" --> L2
+    L2 -- ".detach() & Feedback" --> L1
+```
+
 ### Component Mapping
 | SCM Component | Module | Layer |
 |---|---|---|
-| **V** (Endogenous Variables) | C-JEPA (Slot-attention latent representation) | 1 |
-| **G** (Causal Topology) | Causal GNN (NOTEARS continuous optimization) | 2 |
-| **F** (Structural Equations) | Liquid Neural Network (Neural ODE / RK4) | 2 |
-| **$P(Y \mid do(x))$, $P(Y_{x'} \mid x, y)$** | Neuro-Symbolic Engine (do-calculus & Counterfactuals) | 3 |
-| **Orchestration** | Hierarchical Reasoning Module (GRU + ACT) | 3 |
+| **V** (Variables) | C-JEPA | 1 |
+| **G** (Topology) | Causal GNN (NOTEARS) | 2 |
+| **F** (Mechanisms) | Liquid Neural Network (RK4) | 2 |
+| **$P(Y \mid do(x))$, $P(Y_{x'} \mid x, y)$** | Neuro-Symbolic Engine | 3 |
+| **Orchestration** | HRM (GRU + ACT) | 3 |
 
 ## Implementation Details
 
