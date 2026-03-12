@@ -76,13 +76,16 @@ flowchart TD
 - **Acyclicity Requirement**: The structure discovery module (NOTEARS) assumes a Directed Acyclic Graph (DAG) topology. Accuracy on graphs containing feedback loops is not guaranteed.
 - **Computational Overhead**: The use of Neural ODEs with adaptive RK4 solvers increases per-inference FLOPs compared to discrete-time architectures.
 - **Hyperparameter Sensitivity**: Latent variable resolution is dependent on slot-attention bottleneck dimensions and temporal smoothing coefficients.
+- **Hardware-Aware Implementation (v2 Prototype)**: The current single-file demonstration (`hhcra_v2.py`) is an intentionally compromised prototype optimized for low-specification local laptop environments. While the original design necessitates GPU-accelerated PyTorch and `torchdiffeq`-based continuous ODE solvers, this prototype utilizes pure NumPy for CPU computation. This design choice prioritizes local portability and immediate executability over the parallel processing efficiency and superior convergence speeds of the intended GPU-based implementation.
 
 ## Verification & Usage
 
 The implementation has been verified against a 5-graph benchmark suite.
 
 - **Unit Tests**: 146/146 passed (Verified locally via `pytest tests/ -v`).
-- **Dependencies**: Python ≥ 3.8, PyTorch ≥ 2.0, SciPy, torchdiffeq.
+- **Dependencies**:
+    - **Intended Architecture**: Python ≥ 3.8, PyTorch ≥ 2.0, SciPy, `torchdiffeq` (required for the full GPU-accelerated framework).
+    - **Local Prototype (`hhcra_v2.py`)**: Strictly depends only on **NumPy and SciPy** for local CPU execution, ensuring accessibility on standard laptop hardware.
 
 ### Execution
 ```bash
