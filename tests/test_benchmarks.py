@@ -78,3 +78,21 @@ class TestDataGeneration:
         obs, _ = generate_causal_data()
         assert isinstance(obs, torch.Tensor)
         assert obs.dtype == torch.float32
+
+
+class TestTrainLayer3GradientFix:
+    """v0.4.1 FIX VALIDATION: train_layer3 should actually update HRM parameters.
+
+    The old code computed loss from torch.tensor(r['convergence']) which was
+    a detached leaf scalar with no gradient connection to any HRM parameter.
+    This meant train_layer3 was effectively a no-op.
+    """
+
+    def test_hrm_params_change_during_training(self, config, observations):
+        from hhcra.architecture import HHCRA
+        model = HHCRA(config)
+        params_before = {n: p.clone() for n, p in model.layer3.hrm.named_parameters()}
+        model.train_layer3(observations, verbose=False)
+        changed = sum(1 for n, p in model.layer3.hrm.named_parameters()
+                      if not torch.equal(p, params_before[n]))
+        assert changed > 0, "train_layer3 did not update any HRM parameters (gradient fix failed)"

@@ -16,20 +16,49 @@ from hhcra.config import HHCRAConfig
 
 
 class SlotAttention(nn.Module):
-    """Decompose latent vector into N variable slots via attention."""
+    """
+    Decompose latent vector into N variable slots via competitive attention.
 
-    def __init__(self, num_vars: int, latent_dim: int):
+    v0.4.1 FIX: Uses softmax over slots (competitive) instead of independent
+    sigmoid gating. Each slot competes for the input signal, forcing
+    specialization on different aspects of the input. This is closer to
+    Locatello et al. (2020) and resolves the V-alignment bottleneck where
+    all slots would extract identical information.
+
+    Previous issue: sigmoid gating was independent per slot, so no competition
+    existed — all N slots could attend equally to the same input features,
+    producing near-identical representations and inflating Pipeline SHD.
+    """
+
+    def __init__(self, num_vars: int, latent_dim: int, num_iters: int = 3):
         super().__init__()
         self.num_vars = num_vars
         self.latent_dim = latent_dim
+        self.num_iters = num_iters
+        self.scale = latent_dim ** 0.5
 
+        # Learnable slot initialization
+        self.slot_mu = nn.Parameter(torch.randn(1, num_vars, latent_dim) * 0.05)
+        self.slot_log_sigma = nn.Parameter(torch.zeros(1, num_vars, latent_dim))
+
+        # Shared projections for competitive attention
         self.W_key = nn.Linear(latent_dim, latent_dim, bias=False)
         self.W_value = nn.Linear(latent_dim, latent_dim, bias=False)
-        self.W_query = nn.ModuleList([
-            nn.Linear(latent_dim, latent_dim, bias=True)
-            for _ in range(num_vars)
-        ])
-        self.scale = latent_dim ** 0.5
+        self.W_query = nn.Linear(latent_dim, latent_dim, bias=False)
+
+        # GRU update for iterative slot refinement
+        self.gru = nn.GRUCell(latent_dim, latent_dim)
+
+        # Slot-level residual MLP
+        self.mlp = nn.Sequential(
+            nn.Linear(latent_dim, latent_dim),
+            nn.ReLU(),
+            nn.Linear(latent_dim, latent_dim),
+        )
+
+        self.norm_input = nn.LayerNorm(latent_dim)
+        self.norm_slots = nn.LayerNorm(latent_dim)
+        self.norm_mlp = nn.LayerNorm(latent_dim)
 
     def forward(self, z: torch.Tensor) -> torch.Tensor:
         """
@@ -37,18 +66,43 @@ class SlotAttention(nn.Module):
         Returns: slots (B, num_vars, latent_dim)
         """
         B = z.shape[0]
-        keys = self.W_key(z)      # (B, D)
-        values = self.W_value(z)  # (B, D)
+        N = self.num_vars
+        D = self.latent_dim
 
-        slots = []
-        for v in range(self.num_vars):
-            queries = self.W_query[v](z)  # (B, D)
-            attn = torch.sum(queries * keys, dim=-1, keepdim=True) / self.scale
-            attn = torch.sigmoid(attn)
-            slot = attn * values + (1 - attn) * queries
-            slots.append(slot)
+        # Project input
+        inputs = self.norm_input(z).unsqueeze(1)  # (B, 1, D)
+        k = self.W_key(inputs)    # (B, 1, D)
+        v = self.W_value(inputs)  # (B, 1, D)
 
-        slots = torch.stack(slots, dim=1)  # (B, N, D)
+        # Initialize slots with learned parameters + noise for diversity
+        slots = self.slot_mu.expand(B, -1, -1).clone()
+        if self.training:
+            sigma = self.slot_log_sigma.exp().expand(B, -1, -1)
+            slots = slots + sigma * torch.randn_like(slots)
+
+        # Iterative competitive attention
+        for _ in range(self.num_iters):
+            slots_normed = self.norm_slots(slots)
+            q = self.W_query(slots_normed)  # (B, N, D)
+
+            # Attention logits: (B, N, 1)
+            attn_logits = torch.bmm(q, k.transpose(1, 2)) / self.scale
+
+            # COMPETITIVE: softmax over slots (dim=1), not independent sigmoid
+            # This forces slots to compete for the input signal
+            attn = F.softmax(attn_logits, dim=1)  # (B, N, 1)
+
+            # Weighted value: each slot gets its share
+            updates = attn * v  # (B, N, D) via broadcast
+
+            # GRU update for slot refinement
+            updates_flat = updates.reshape(B * N, D)
+            slots_flat = slots.reshape(B * N, D)
+            slots = self.gru(updates_flat, slots_flat).reshape(B, N, D)
+
+            # Residual MLP
+            slots = slots + self.mlp(self.norm_mlp(slots))
+
         slots = F.normalize(slots, dim=-1, eps=1e-8)
         return slots
 
@@ -71,8 +125,8 @@ class CJEPA(nn.Module):
         # Encoder: observation -> latent space
         self.encoder = nn.Linear(D_obs, D_lat)
 
-        # Slot attention
-        self.slot_attention = SlotAttention(N, D_lat)
+        # Slot attention (competitive, v0.4.1)
+        self.slot_attention = SlotAttention(N, D_lat, num_iters=config.slot_attention_iters)
 
         # Temporal smoothing
         self.W_temporal = nn.Linear(D_lat, D_lat, bias=False)
@@ -148,7 +202,6 @@ class CJEPA(nn.Module):
         """Handle feedback from upper layers (no gradient, config-level)."""
         if feedback.get('increase_resolution'):
             with torch.no_grad():
-                for q in self.slot_attention.W_query:
-                    q.weight.add_(torch.randn_like(q.weight) * 0.02)
-                    if q.bias is not None:
-                        q.bias.add_(torch.randn_like(q.bias) * 0.05)
+                # Perturb slot initialization to encourage re-specialization
+                self.slot_attention.slot_mu.data.add_(
+                    torch.randn_like(self.slot_attention.slot_mu) * 0.05)

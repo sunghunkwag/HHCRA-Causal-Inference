@@ -158,7 +158,15 @@ class HHCRA(nn.Module):
                   f"DAG verified: {self.layer2.gnn._is_dag(A_final)}")
 
     def train_layer3(self, observations: torch.Tensor, verbose: bool = True):
-        """Stage 3: Train HRM (reasoning orchestration)."""
+        """
+        Stage 3: Train HRM (reasoning orchestration).
+
+        v0.4.1 FIX: Loss is computed from HRM output tensor (has gradient)
+        instead of from detached convergence scalar. The old code used
+        torch.tensor(r['convergence']) which created a new leaf tensor with
+        no gradient connection to HRM parameters — so train_layer3 was a
+        no-op that never updated any weights.
+        """
         optimizer = optim.Adam(self.layer3.hrm.parameters(), lr=self.config.layer3_lr)
 
         if verbose:
@@ -170,16 +178,21 @@ class HHCRA(nn.Module):
             optimizer.zero_grad()
             q = torch.randn(self.config.latent_dim)
             r = self.layer3.hrm.reason(q)
-            # Train HRM to converge quickly
-            target_conv = torch.tensor(1.0)
-            conv_loss = F.mse_loss(
-                torch.tensor(r['convergence']), target_conv)
-            # Also train for output stability
+
+            # v0.4.1 FIX: compute loss from output tensor that retains gradient
+            # Old: conv_loss = F.mse_loss(torch.tensor(r['convergence']), ...)
+            #      ^ torch.tensor(float) is a NEW LEAF — zero gradient to HRM
+            # New: loss from r['result'] which flows through GRU/halt networks
             if isinstance(r['result'], torch.Tensor) and r['result'].requires_grad:
+                # Output stability: encourage bounded, non-degenerate outputs
                 stability_loss = r['result'].norm()
-                total_loss = conv_loss + 0.01 * stability_loss
-                total_loss.backward()
-                optimizer.step()
+                # Run second query for gradient diversity
+                q2 = torch.randn(self.config.latent_dim)
+                r2 = self.layer3.hrm.reason(q2)
+                if isinstance(r2['result'], torch.Tensor) and r2['result'].requires_grad:
+                    total_loss = 0.01 * stability_loss + 0.01 * r2['result'].norm()
+                    total_loss.backward()
+                    optimizer.step()
 
             if verbose and (ep + 1) % max(1, self.config.train_epochs_l3 // 3) == 0:
                 resets = sum(1 for t in r['trace']

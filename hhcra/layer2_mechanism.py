@@ -96,7 +96,14 @@ class CausalGNN(nn.Module):
         NOTEARS augmented Lagrangian loss:
         L = F(W) + lambda*||W||_1 + alpha*h(W) + (rho/2)*h(W)^2
 
-        F(W) = least-squares fitting loss using temporal prediction.
+        v0.4.1 FIX: F(W) now uses the standard NOTEARS formulation:
+          F(W) = 0.5/n * sum_d ||X_next[:,:,d] - X_curr[:,:,d] @ A||^2
+        computed per latent dimension d, preserving per-variable variance
+        information critical for structure identification.
+
+        Previous issue: edge_net collapsed latent dim to scalar via mean,
+        destroying the per-variable signal that distinguishes causal from
+        spurious edges (Zheng et al. 2018 Eq. 2).
         """
         B, T, N, D = latent.shape
         if T < 2:
@@ -104,25 +111,21 @@ class CausalGNN(nn.Module):
 
         A = self.adjacency()
 
-        # F(W): temporal prediction loss
-        # For each variable i, predict x_i(t+1) from parents at time t
+        # Standard NOTEARS fitting loss on temporal data:
+        # For each latent dimension d:
+        #   pred[:, i, d] = sum_j A[i,j] * X_curr[:, j, d]
         x_curr = latent[:, :-1, :, :]  # (B, T-1, N, D)
         x_next = latent[:, 1:, :, :]   # (B, T-1, N, D)
 
-        # Weighted parent aggregation
-        # A[i,j] = weight of j->i
-        # parent_agg[i] = sum_j A[i,j] * x_j
-        parent_agg = torch.einsum('ij,btjd->btid', A, x_curr)  # (B, T-1, N, D)
+        n_samples = B * (T - 1)
+        xc = x_curr.reshape(n_samples, N, D)
+        xn = x_next.reshape(n_samples, N, D)
 
-        # Prediction: combine self + parent info through edge network
-        x_flat = x_curr.reshape(-1, D)
-        p_flat = parent_agg.reshape(-1, D)
-        cat_input = torch.cat([x_flat, p_flat], dim=-1)  # (B*(T-1)*N, 2D)
-        pred = self.edge_net(cat_input).reshape(B, T - 1, N, 1)
+        # Predicted via adjacency: pred[:, i, d] = sum_j A[i,j] * xc[:, j, d]
+        pred = torch.einsum('ij,njd->nid', A, xc)  # (n, N, D)
 
-        # Target: next timestep mean per variable
-        target = x_next.mean(dim=-1, keepdim=True)  # (B, T-1, N, 1)
-        fitting_loss = F.mse_loss(pred, target)
+        # Least-squares: 0.5/n * ||xn - pred||^2
+        fitting_loss = 0.5 * torch.mean((xn - pred) ** 2)
 
         # L1 sparsity
         l1_loss = self.config.notears_lambda * torch.abs(A).sum()

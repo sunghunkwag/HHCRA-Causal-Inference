@@ -10,7 +10,7 @@ from hhcra.layer1_cjepa import CJEPA, SlotAttention
 
 class TestSlotAttention:
     def test_output_shape(self, config):
-        sa = SlotAttention(config.num_vars, config.latent_dim)
+        sa = SlotAttention(config.num_vars, config.latent_dim, num_iters=config.slot_attention_iters)
         z = torch.randn(4, config.latent_dim)
         slots = sa(z)
         assert slots.shape == (4, config.num_vars, config.latent_dim)
@@ -21,6 +21,16 @@ class TestSlotAttention:
         slots = sa(z)
         norms = slots.norm(dim=-1)
         assert torch.allclose(norms, torch.ones_like(norms), atol=0.1)
+
+    def test_slot_diversity(self, config):
+        """v0.4.1 FIX VALIDATION: competitive attention produces diverse slots."""
+        sa = SlotAttention(config.num_vars, config.latent_dim, num_iters=3)
+        sa.eval()
+        z = torch.randn(2, config.latent_dim)
+        slots = sa(z)
+        # Slots should not all be identical — std across slot dim should be > 0
+        slot_std = slots[0].std(dim=0).mean()
+        assert slot_std > 0.01, f"Slot diversity too low: {slot_std:.4f}"
 
 
 class TestCJEPA:
@@ -60,10 +70,10 @@ class TestCJEPA:
 
     def test_handle_feedback(self, config):
         model = CJEPA(config)
-        old_bias = model.slot_attention.W_query[0].bias.clone()
+        old_mu = model.slot_attention.slot_mu.clone()
         model.handle_feedback({'increase_resolution': True})
-        new_bias = model.slot_attention.W_query[0].bias
-        assert not torch.equal(old_bias, new_bias)
+        new_mu = model.slot_attention.slot_mu
+        assert not torch.equal(old_mu, new_mu)
 
     def test_temporal_smoothing(self, config, observations):
         """Verify temporal smoothing affects output."""
