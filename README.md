@@ -18,37 +18,34 @@ $M = \langle V, U, F, P(u) \rangle$
 ### Architecture Topology
 
 ```mermaid
-graph TD
-    %% Main Hierarchy
-    A[Sensor Data] --> B[L1: Perception]
-    B -- "Stop-Grad" --> C[L2: Mechanism]
-    C -- "Stop-Grad" --> D[L3: Reasoning]
+flowchart TD
+    Input([Sensor Observations]) ==> L1
     
-    %% Components inside layers (flat structure for stability)
-    subgraph L1 [Layer 1]
-        B1[C-JEPA]
-    end
-    
-    subgraph L2 [Layer 2]
-        C1[NOTEARS GNN]
-        C2[Liquid ODE]
-    end
-    
-    subgraph L3 [Layer 3]
-        D1[Neuro-Symbolic]
-        D2[HRM Engine]
+    subgraph L1 [Layer 1: Perception]
+        C1[C-JEPA Slot Attention]
     end
 
-    %% Feedback & Logic
-    D -. "Revision" .-> C
-    C -. "Granularity" .-> B
-    Q{{"Query"}} -.-> D
-    D --> R([Result])
+    L1 -- "Stop-Grad" --> L2
+    
+    subgraph L2 [Layer 2: Mechanism]
+        C2[NOTEARS GNN] <--> C3[Liquid Neural ODE]
+    end
 
-    %% Styling
-    style L3 fill:#fff4dd,stroke:#d4a017
-    style L2 fill:#e7f2ff,stroke:#005bb7
+    L2 -- "Stop-Grad" --> L3
+
+    subgraph L3 [Layer 3: Reasoning]
+        C4[Neuro-Symbolic] <--> C5[HRM Engine]
+    end
+
+    Q{{Causal Query}} -.-> L3
+    L3 ==> R([Inference Result])
+
+    L3 -. "Diagnostic Feedback" .-> L2
+    L2 -. "Granularity Feedback" .-> L1
+
     style L1 fill:#f0fdf4,stroke:#166534
+    style L2 fill:#e7f2ff,stroke:#005bb7
+    style L3 fill:#fff4dd,stroke:#d4a017
 ```
 
 ### Component Mapping
