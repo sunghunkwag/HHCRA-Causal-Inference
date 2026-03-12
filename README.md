@@ -18,25 +18,46 @@ $M = \langle V, U, F, P(u) \rangle$
 ### Architecture Topology
 
 ```mermaid
-graph TD
-    subgraph L3 ["Layer 3: Reasoning"]
-        NSE["Neuro-Symbolic Engine"]
-        HRM["Hierarchical Reasoning Module"]
-        NSE <--> HRM
+flowchart TB
+    %% Nodes
+    Obs([Sensor Observations / Env State])
+    
+    subgraph Reasoning ["<b>Layer 3: Top-Down Reasoning & Orchestration</b>"]
+        direction LR
+        NSE["<b>Neuro-Symbolic Engine</b><br/><i>do-calculus & Counterfactuals</i>"]
+        HRM["<b>HRM</b><br/><i>GRU + Adaptive Computation</i>"]
+        NSE <==> HRM
     end
 
-    subgraph L2 ["Layer 2: Mechanism"]
-        GNN["Causal GNN (NOTEARS)"]
-        LNN["Liquid Neural Network (ODE)"]
-        GNN <--> LNN
+    subgraph Mechanism ["<b>Layer 2: Structural Dynamics & Causal Mechanisms</b>"]
+        direction LR
+        GNN["<b>Causal GNN</b><br/><i>NOTEARS Continuous Optimization</i>"]
+        LNN["<b>Liquid Neural Net</b><br/><i>Neural ODE (RK4 Solver)</i>"]
+        GNN <==> LNN
     end
 
-    subgraph L1 ["Layer 1: Perception"]
-        CJEPA["C-JEPA (Slot Attention)"]
+    subgraph Perception ["<b>Layer 1: Latent Causal Representation</b>"]
+        CJEPA["<b>C-JEPA</b><br/><i>Slot Attention & Temporal Smoothing</i>"]
     end
 
-    L3 -- "Gradient Isolation & Diagnostic Feedback" --> L2
-    L2 -- "Gradient Isolation & Diagnostic Feedback" --> L1
+    %% High-level Flow
+    Obs ==> Perception
+    Perception -- "<b>Gradient Isolation</b><br/>Latent Variable Slots" --> Mechanism
+    Mechanism -- "<b>Gradient Isolation</b><br/>Structural Trajectories" --> Reasoning
+    
+    %% Feedback Loops
+    Reasoning -. "Diagnostic Revision" .-> Mechanism
+    Mechanism -. "Granularity Adjustment" .-> Perception
+
+    %% Queries
+    Query{{"<b>Causal Query</b><br/><i>Rung 1, 2, or 3</i>"}} -.-> Reasoning
+    Reasoning --> Result([Causal Inference Result])
+
+    %% Styling
+    style Reasoning fill:#fff4dd,stroke:#d4a017,stroke-width:2px
+    style Mechanism fill:#e7f2ff,stroke:#005bb7,stroke-width:2px
+    style Perception fill:#f0fdf4,stroke:#166534,stroke-width:2px
+    style Query fill:#fefce8,stroke:#ca8a04,stroke-width:2px
 ```
 
 ### Component Mapping
