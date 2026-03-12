@@ -12,7 +12,7 @@ HHCRA implements a modular decomposition of SCM components into differentiable a
 | **V** (Endogenous Variables) | C-JEPA (Slot-attention latent representation) | 1 |
 | **G** (Causal Topology) | Causal GNN (NOTEARS continuous optimization) | 2 |
 | **F** (Structural Equations) | Liquid Neural Network (Neural ODE / RK4) | 2 |
-| **P(Y\|do(X)), P(Y_{x'}\|e)** | Neuro-Symbolic Engine (Calculus of Intervention) | 3 |
+| **$P(Y \mid do(x))$, $P(Y_{x'} \mid x, y)$** | Neuro-Symbolic Engine (do-calculus & Counterfactuals) | 3 |
 | **Orchestration** | Hierarchical Reasoning Module (GRU + ACT) | 3 |
 
 ## Implementation Details
