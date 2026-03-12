@@ -35,8 +35,8 @@ graph TD
         CJEPA["C-JEPA (Slot Attention)"]
     end
 
-    L3 -- ".detach() & Feedback" --> L2
-    L2 -- ".detach() & Feedback" --> L1
+    L3 -- "Gradient Isolation & Diagnostic Feedback" --> L2
+    L2 -- "Gradient Isolation & Diagnostic Feedback" --> L1
 ```
 
 ### Component Mapping
