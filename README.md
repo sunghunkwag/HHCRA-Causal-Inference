@@ -18,44 +18,37 @@ $M = \langle V, U, F, P(u) \rangle$
 ### Architecture Topology
 
 ```mermaid
-flowchart TB
-    %% Nodes
-    Obs([Sensor Observations / Env State])
+graph TD
+    %% Main Hierarchy
+    A[Sensor Data] --> B[L1: Perception]
+    B -- "Stop-Grad" --> C[L2: Mechanism]
+    C -- "Stop-Grad" --> D[L3: Reasoning]
     
-    subgraph L3 ["Layer 3: Top-Down Reasoning"]
-        NSE["Neuro-Symbolic Engine (do-calculus & Counterfactuals)"]
-        HRM["HRM (GRU + Adaptive Computation)"]
-        NSE <==> HRM
+    %% Components inside layers (flat structure for stability)
+    subgraph L1 [Layer 1]
+        B1[C-JEPA]
     end
-
-    subgraph L2 ["Layer 2: Mechanism & Dynamics"]
-        GNN["Causal GNN (NOTEARS Optimization)"]
-        LNN["Liquid Neural Net (Neural ODE)"]
-        GNN <==> LNN
-    end
-
-    subgraph L1 ["Layer 1: Latent Representation"]
-        CJEPA["C-JEPA (Slot Attention)"]
-    end
-
-    %% High-level Flow
-    Obs ==> L1
-    L1 -- "Stop-Gradient (Latent Slots)" --> L2
-    L2 -- "Stop-Gradient (Structural Trajectories)" --> L3
     
-    %% Feedback Loops
-    L3 -. "Diagnostic Feedback" .-> L2
-    L2 -. "Granularity Feedback" .-> L1
+    subgraph L2 [Layer 2]
+        C1[NOTEARS GNN]
+        C2[Liquid ODE]
+    end
+    
+    subgraph L3 [Layer 3]
+        D1[Neuro-Symbolic]
+        D2[HRM Engine]
+    end
 
-    %% Queries
-    Query{{"Causal Query (Rungs 1-3)"}} -.-> L3
-    L3 --> Result([Inference Result])
+    %% Feedback & Logic
+    D -. "Revision" .-> C
+    C -. "Granularity" .-> B
+    Q{{"Query"}} -.-> D
+    D --> R([Result])
 
     %% Styling
-    style L3 fill:#fff4dd,stroke:#d4a017,stroke-width:2px
-    style L2 fill:#e7f2ff,stroke:#005bb7,stroke-width:2px
-    style L1 fill:#f0fdf4,stroke:#166534,stroke-width:2px
-    style Query fill:#fefce8,stroke:#ca8a04,stroke-width:2px
+    style L3 fill:#fff4dd,stroke:#d4a017
+    style L2 fill:#e7f2ff,stroke:#005bb7
+    style L1 fill:#f0fdf4,stroke:#166534
 ```
 
 ### Component Mapping
