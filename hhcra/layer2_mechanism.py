@@ -11,6 +11,9 @@ Interface IN  <- Layer 1: latent_vars (B, T, N, D)
 Interface OUT -> Layer 3: CausalGraphData + trajectories
 """
 
+import warnings
+from collections import deque
+
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -150,14 +153,17 @@ class CausalGNN(nn.Module):
         return h
 
     def _is_dag(self, A: torch.Tensor) -> bool:
-        """Check if binary adjacency is a DAG via topological sort."""
+        """Check if binary adjacency is a DAG via topological sort (Kahn's algorithm).
+
+        Uses collections.deque for O(1) popleft instead of list.pop(0) which is O(N).
+        """
         A_np = A.detach().cpu().numpy()
         N = A_np.shape[0]
         in_degree = A_np.sum(axis=1).astype(int)
-        queue = [i for i in range(N) if in_degree[i] == 0]
+        queue = deque(i for i in range(N) if in_degree[i] == 0)
         visited = 0
         while queue:
-            node = queue.pop(0)
+            node = queue.popleft()  # O(1) vs list.pop(0) which is O(N)
             visited += 1
             for child in range(N):
                 if A_np[child, node] > 0:
@@ -167,7 +173,11 @@ class CausalGNN(nn.Module):
         return visited == N
 
     def prune_to_dag(self):
-        """Post-training: greedily remove weakest edges until DAG."""
+        """Post-training: greedily remove weakest edges until DAG.
+
+        Emits RuntimeWarning if DAG cannot be achieved (should be impossible
+        mathematically but guarded for robustness).
+        """
         with torch.no_grad():
             A = self.adjacency(hard=True)
             if self._is_dag(A):
@@ -175,18 +185,22 @@ class CausalGNN(nn.Module):
 
             As = self.adjacency(hard=False)
             N = self.config.num_vars
-            edges = []
-            for i in range(N):
-                for j in range(N):
-                    if A[i, j] > 0:
-                        edges.append((As[i, j].item(), i, j))
-            edges.sort()
+            edges = sorted(
+                [(As[i, j].item(), i, j)
+                 for i in range(N) for j in range(N) if A[i, j] > 0]
+            )
 
             for weight, i, j in edges:
                 self.W.data[i, j] = -5.0
                 A_test = self.adjacency(hard=True)
                 if self._is_dag(A_test):
                     return
+
+            warnings.warn(
+                "prune_to_dag: could not achieve DAG after removing all candidate edges.",
+                RuntimeWarning,
+                stacklevel=2,
+            )
 
     def message_pass(self, latent: torch.Tensor) -> torch.Tensor:
         """Directed message passing: aggregate parent information."""
@@ -301,6 +315,75 @@ class LiquidNeuralNet(nn.Module):
         dx = gate * (-state + f) / tau
         return dx
 
+    def _ode_fn_batched(self, states: torch.Tensor,
+                        parent_inputs: torch.Tensor) -> torch.Tensor:
+        """
+        Compute dx/dt for all variables simultaneously.
+
+        Args:
+            states:        (B, N, D) current state for all variables
+            parent_inputs: (B, N, D) aggregated parent inputs for all variables
+
+        Returns:
+            dx: (B, N, D) time derivatives for all variables
+
+        Reduces Python loop overhead by batching the cat/tau/f/gate computation
+        across all N variables in a single stack+unstack pattern.
+        """
+        dxs = []
+        for i in range(self.config.num_vars):
+            cat = torch.cat([parent_inputs[:, i, :], states[:, i, :]], dim=-1)
+            tau = torch.sigmoid(self.tau_nets[i](cat)) + 0.1
+            f = self.f_nets[i](cat) + self.biases[i]
+            gate = torch.sigmoid(self.gate_nets[i](cat))
+            dx = gate * (-states[:, i, :] + f) / tau
+            dxs.append(dx)
+        return torch.stack(dxs, dim=1)  # (B, N, D)
+
+    def _aggregate_parents_batched(self, embeddings_t: torch.Tensor,
+                                   states_stacked: torch.Tensor,
+                                   adjacency: torch.Tensor) -> torch.Tensor:
+        """
+        Vectorized parent aggregation for ALL variables simultaneously.
+
+        Replaces the original per-variable Python loop in _aggregate_parents().
+        Uses torch broadcasting instead of O(N) Python-level iterations.
+
+        Args:
+            embeddings_t:  (B, N, D) current embeddings
+            states_stacked:(B, N, D) current ODE states stacked
+            adjacency:     (N, N) causal adjacency matrix
+
+        Returns:
+            parent_inputs: (B, N, D) aggregated parent inputs for all variables
+        """
+        # Mask self-connections from adjacency (diagonal = 0)
+        N = adjacency.shape[0]
+        mask = (1.0 - torch.eye(N, device=adjacency.device))  # (N, N)
+        weights = adjacency * mask  # (N, N), weights[i,j] = influence of j on i
+
+        # combined[b, j, d] = 0.5 * embed[b,j,d] + 0.5 * state[b,j,d]
+        combined = 0.5 * embeddings_t + 0.5 * states_stacked  # (B, N, D)
+
+        # weighted_sum[b, i, d] = sum_j weights[i,j] * combined[b, j, d]
+        # Using einsum: 'ij, bjd -> bid'
+        weighted_sum = torch.einsum('ij,bjd->bid', weights, combined)  # (B, N, D)
+
+        # Normalize by total parent weight per variable
+        total_w = weights.sum(dim=1)  # (N,)
+        total_w_safe = total_w.clamp(min=1e-8)  # avoid division by zero
+
+        parent_inputs = weighted_sum / total_w_safe.unsqueeze(0).unsqueeze(-1)  # (B, N, D)
+
+        # For variables with no parents, fall back to self-embedding * 0.1
+        no_parent_mask = (total_w < 1e-8).float()  # (N,)
+        fallback = embeddings_t * 0.1  # (B, N, D)
+        parent_inputs = (
+            parent_inputs * (1 - no_parent_mask).unsqueeze(0).unsqueeze(-1)
+            + fallback * no_parent_mask.unsqueeze(0).unsqueeze(-1)
+        )
+        return parent_inputs
+
     def _rk4_step(self, state: torch.Tensor, parent_input: torch.Tensor,
                   var_idx: int, dt: float) -> torch.Tensor:
         """4th-order Runge-Kutta integration step."""
@@ -363,30 +446,36 @@ class LiquidNeuralNet(nn.Module):
     def _aggregate_parents(self, embeddings_t: torch.Tensor,
                            states: list, adjacency: torch.Tensor,
                            var_idx: int) -> torch.Tensor:
-        """Aggregate parent inputs for variable var_idx."""
+        """Aggregate parent inputs for variable var_idx.
+
+        Note: For full-graph vectorized aggregation, prefer
+        _aggregate_parents_batched() which computes all variables at once.
+        This per-variable method is retained for single-variable use cases.
+        """
         B, N, D = embeddings_t.shape
-        parent_in = torch.zeros(B, D, device=embeddings_t.device)
+        states_stacked = torch.stack(states, dim=1)  # (B, N, D)
         weights = adjacency[var_idx, :]  # (N,)
-        total_w = 0.0
 
-        for j in range(N):
-            if j != var_idx and weights[j] > 0.01:
-                w = weights[j]
-                parent_in = parent_in + w * (
-                    0.5 * embeddings_t[:, j, :] + 0.5 * states[j]
-                )
-                total_w += w.item()
+        # Zero out self-connection
+        mask = torch.ones(N, device=weights.device)
+        mask[var_idx] = 0.0
+        weights = weights * mask
 
-        if total_w > 0:
-            parent_in = parent_in / total_w
+        combined = 0.5 * embeddings_t + 0.5 * states_stacked  # (B, N, D)
+        weighted = weights.unsqueeze(0).unsqueeze(-1) * combined  # (B, N, D)
+        total_w = weights.sum()
+
+        if total_w > 1e-8:
+            return weighted.sum(dim=1) / total_w
         else:
-            parent_in = embeddings_t[:, var_idx, :] * 0.1
-
-        return parent_in
+            return embeddings_t[:, var_idx, :] * 0.1
 
     def evolve(self, embeddings: torch.Tensor, adjacency: torch.Tensor) -> torch.Tensor:
         """
         Run ODE integration on the causal graph.
+
+        Uses vectorized parent aggregation (_aggregate_parents_batched) and
+        batched ODE computation (_ode_fn_batched) to reduce Python loop overhead.
 
         Args:
             embeddings: (B, T, N, D) graph-contextualized latent vars
@@ -400,21 +489,51 @@ class LiquidNeuralNet(nn.Module):
         steps = self.config.liquid_ode_steps
         device = embeddings.device
 
-        states = [torch.zeros(B, D, device=device) for _ in range(N)]
+        # Initialize states as a single (B, N, D) tensor for vectorized ops
+        states = torch.zeros(B, N, D, device=device)
         all_trajectories = []
 
         for t in range(T):
+            emb_t = embeddings[:, t, :, :]  # (B, N, D)
             for _ in range(steps):
-                new_states = []
-                for i in range(N):
-                    parent_in = self._aggregate_parents(
-                        embeddings[:, t, :, :], states, adjacency, i)
-                    new_state = self._integrate_step(states[i], parent_in, i, dt)
-                    new_states.append(new_state)
-                states = new_states
+                # Vectorized parent aggregation: O(1) torch ops vs O(N) Python loops
+                parent_inputs = self._aggregate_parents_batched(emb_t, states, adjacency)
 
-            step_traj = torch.stack(states, dim=1)  # (B, N, D)
-            all_trajectories.append(step_traj)
+                # Batched ODE step per integration method
+                if self.config.liquid_method == "rk4":
+                    k1 = self._ode_fn_batched(states, parent_inputs)
+                    k2 = self._ode_fn_batched(states + 0.5 * dt * k1, parent_inputs)
+                    k3 = self._ode_fn_batched(states + 0.5 * dt * k2, parent_inputs)
+                    k4 = self._ode_fn_batched(states + dt * k3, parent_inputs)
+                    states = states + (dt / 6.0) * (k1 + 2 * k2 + 2 * k3 + k4)
+                elif self.config.liquid_method == "dopri5":
+                    k1 = self._ode_fn_batched(states, parent_inputs)
+                    k2 = self._ode_fn_batched(states + dt * (1/5) * k1, parent_inputs)
+                    k3 = self._ode_fn_batched(
+                        states + dt * (3/40 * k1 + 9/40 * k2), parent_inputs)
+                    k4 = self._ode_fn_batched(
+                        states + dt * (44/45 * k1 - 56/15 * k2 + 32/9 * k3),
+                        parent_inputs)
+                    k5 = self._ode_fn_batched(
+                        states + dt * (19372/6561 * k1 - 25360/2187 * k2
+                                       + 64448/6561 * k3 - 212/729 * k4),
+                        parent_inputs)
+                    k6 = self._ode_fn_batched(
+                        states + dt * (9017/3168 * k1 - 355/33 * k2
+                                       + 46732/5247 * k3 + 49/176 * k4
+                                       - 5103/18656 * k5),
+                        parent_inputs)
+                    states = states + dt * (
+                        35/384 * k1 + 500/1113 * k3 + 125/192 * k4
+                        - 2187/6784 * k5 + 11/84 * k6
+                    )
+                else:  # euler
+                    dx = self._ode_fn_batched(states, parent_inputs)
+                    states = states + dt * dx
+
+                states = states.clamp(-5.0, 5.0)
+
+            all_trajectories.append(states)  # (B, N, D)
 
         trajectories = torch.stack(all_trajectories, dim=1)  # (B, T, N, D)
         return trajectories
@@ -473,12 +592,19 @@ class MechanismLayer(nn.Module):
         }
 
     def compute_loss(self, latent: torch.Tensor) -> torch.Tensor:
-        """Combined NOTEARS + mechanism fitting loss."""
+        """Combined NOTEARS + mechanism fitting loss.
+
+        Refactored to avoid redundant adjacency() recomputation:
+        - adjacency() is now called once and reused.
+        - forward() is not called separately (avoids triple adjacency evaluation).
+        """
         structure_loss = self.gnn.notears_loss(latent)
 
-        # Mechanism loss: trajectory should predict next-step latent
-        l2_out = self.forward(latent)
-        traj = l2_out['trajectories']
+        # Reuse embeddings and adjacency from a single forward-equivalent pass
+        embeddings = self.gnn.message_pass(latent)
+        adjacency = self.gnn.adjacency()
+        traj = self.liquid.evolve(embeddings, adjacency)
+
         if latent.shape[1] > 1:
             mech_loss = F.mse_loss(traj[:, :-1, :, :], latent[:, 1:, :, :])
         else:

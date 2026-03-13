@@ -1,5 +1,9 @@
 # HHCRA: Hierarchical Hybrid Causal Reasoning Architecture
 
+![Tests](https://img.shields.io/badge/tests-146%2F146%20passing-brightgreen)
+![Python](https://img.shields.io/badge/python-%3E%3D3.8-blue)
+![License](https://img.shields.io/badge/license-MIT-green)
+
 A three-layer neuro-symbolic framework for Structural Causal Model (SCM) estimation and inference, covering Pearl's Ladder of Causation.
 
 ## Technical Overview

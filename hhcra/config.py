@@ -54,3 +54,23 @@ class HHCRAConfig:
 
     # Device
     device: str = "cpu"
+
+    def __post_init__(self):
+        """Validate critical hyperparameters at construction time."""
+        assert self.num_vars > 0, f"num_vars must be positive, got {self.num_vars}"
+        assert self.latent_dim > 0, f"latent_dim must be positive, got {self.latent_dim}"
+        assert self.obs_dim > 0, f"obs_dim must be positive, got {self.obs_dim}"
+        assert self.notears_rho > 0, f"notears_rho must be positive, got {self.notears_rho}"
+        assert self.liquid_dt > 0, f"liquid_dt must be positive, got {self.liquid_dt}"
+        assert self.liquid_ode_steps > 0, (
+            f"liquid_ode_steps must be positive, got {self.liquid_ode_steps}"
+        )
+        assert 0.0 < self.edge_threshold < 1.0, (
+            f"edge_threshold must be in (0, 1), got {self.edge_threshold}"
+        )
+        assert 0.0 < self.mask_ratio < 1.0, (
+            f"mask_ratio must be in (0, 1), got {self.mask_ratio}"
+        )
+        assert self.liquid_method in ("euler", "rk4", "dopri5"), (
+            f"liquid_method must be one of 'euler', 'rk4', 'dopri5', got '{self.liquid_method}'"
+        )
