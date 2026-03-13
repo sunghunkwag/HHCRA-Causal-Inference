@@ -1,13 +1,14 @@
 """
 HHCRA: Hierarchical Hybrid Causal Reasoning Architecture
 
-A 5-component, 3-layer causal reasoning system covering all three rungs
-of Pearl's Ladder of Causation.
+A three-layer neuro-symbolic architecture for SCM estimation and causal
+inference across Pearl's causal hierarchy (association, intervention,
+counterfactual).
 
-Singularity Extensions:
-    - Liquid Causal Graph: graph structure as a dynamical system
-    - Symbolic Genesis Engine: automatic rule discovery from dynamics
-    - Autocatalytic Causal Network: self-catalytic convergence loop
+Experimental extensions (unvalidated):
+    - LiquidCausalGraph: graph structure as a dynamical system
+    - SymbolicGenesisEngine: invariant detection from ODE trajectories
+    - AutocatalyticCausalNet: iterative feedback loop
 """
 
 from hhcra.config import HHCRAConfig
@@ -18,7 +19,7 @@ from hhcra.symbolic_genesis import SymbolicGenesisEngine, SymbolicRule
 from hhcra.autocatalytic_causal_net import AutocatalyticCausalNet
 from hhcra.singularity import HHCRASingularity
 
-__version__ = "1.0.0"
+__version__ = "0.6.0"
 __all__ = [
     "HHCRAConfig", "CausalGraphData", "CausalQueryType", "HHCRA",
     "LiquidCausalGraph", "SymbolicGenesisEngine", "SymbolicRule",
