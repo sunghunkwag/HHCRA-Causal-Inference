@@ -18,7 +18,7 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass
 
 from hhcra.config import HHCRAConfig
-from hhcra.causal_graph import CausalGraphData
+from hhcra.causal_graph import CausalGraphData, CausalQueryType
 
 
 @dataclass
@@ -283,6 +283,13 @@ class WorldModel:
 
         return errors
 
+    def convergence_improved(self) -> bool:
+        """Check if grounding errors are trending downward."""
+        if len(self.error_history) < 3:
+            return False
+        recent = self.error_history[-3:]
+        return recent[-1] < recent[0]
+
     def get_convergence_stats(self) -> dict:
         """Return statistics about grounding convergence."""
         if not self.error_history:
@@ -302,7 +309,3 @@ class WorldModel:
             'trend': trend,
             'num_groundings': len(errors),
         }
-
-
-# Avoid circular import at module level
-from hhcra.causal_graph import CausalQueryType

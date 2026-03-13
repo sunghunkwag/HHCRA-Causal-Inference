@@ -49,11 +49,12 @@ class NeuroSymbolicEngine:
         Test if X _||_ Y | Z using Bayes-Ball algorithm.
         Returns True if X and Y are d-separated given Z.
         """
+        from collections import deque
         visited = set()
-        queue = [(X, 'up')]
+        queue = deque([(X, 'up')])
 
         while queue:
-            node, direction = queue.pop(0)
+            node, direction = queue.popleft()
 
             if node == Y:
                 return False
@@ -338,10 +339,11 @@ class NeuroSymbolicEngine:
     def _directed_paths(self, G: CausalGraphData, start: int, end: int,
                         max_depth: int = 10) -> List[List[int]]:
         """Find all directed paths from start to end."""
+        from collections import deque
         paths = []
-        queue = [[start]]
+        queue = deque([[start]])
         while queue:
-            path = queue.pop(0)
+            path = queue.popleft()
             node = path[-1]
             if len(path) > max_depth:
                 continue
@@ -354,16 +356,8 @@ class NeuroSymbolicEngine:
         return paths
 
     def _power_subsets(self, s: set, size: int):
-        """Generate all subsets of given size."""
-        s = list(s)
-        if size == 0:
-            yield []
-            return
-        if size > len(s):
-            return
-        for i in range(len(s)):
-            for rest in self._power_subsets(s[i + 1:], size - 1):
-                yield [s[i]] + rest
+        """Generate all subsets of given size using itertools.combinations."""
+        yield from combinations(sorted(s), size)
 
 
 class HRM(nn.Module):
@@ -606,8 +600,9 @@ class ReasoningLayer(nn.Module):
                     adj_tensor, {X: counterfactual_x})
 
                 # Step 3: Prediction — propagate through modified SCM
+                # v0.5.0 FIX: use mod_adj (edges to X cut) instead of adj_tensor
                 cf_traj = mechanism_layer.liquid.intervene(
-                    trajectories, adj_tensor, {X: counterfactual_x})
+                    trajectories, mod_adj, {X: counterfactual_x})
                 cf_y = cf_traj[:, -1, Y, :]
 
                 answer = self.symbolic.counterfactual_prediction(cf_y, noise_u)

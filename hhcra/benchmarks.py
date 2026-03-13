@@ -150,16 +150,17 @@ def generate_benchmark_data(
 
 
 def _topological_sort(N: int, edges: List[Tuple[int, int]]) -> List[int]:
-    """Topological sort of nodes."""
+    """Topological sort of nodes via Kahn's algorithm."""
+    from collections import deque
     in_deg = [0] * N
     children = [[] for _ in range(N)]
     for p, c in edges:
         in_deg[c] += 1
         children[p].append(c)
-    queue = [i for i in range(N) if in_deg[i] == 0]
+    queue = deque(i for i in range(N) if in_deg[i] == 0)
     order = []
     while queue:
-        node = queue.pop(0)
+        node = queue.popleft()
         order.append(node)
         for ch in children[node]:
             in_deg[ch] -= 1

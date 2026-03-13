@@ -8,6 +8,8 @@ from enum import Enum
 from dataclasses import dataclass, field
 from typing import List, Tuple, Set, Optional
 
+from collections import deque
+
 import numpy as np
 import torch
 
@@ -34,9 +36,9 @@ class CausalGraphData:
 
     def ancestors(self, n: int) -> Set[int]:
         result = set()
-        queue = list(self.parents(n))
+        queue = deque(self.parents(n))
         while queue:
-            x = queue.pop(0)
+            x = queue.popleft()
             if x not in result:
                 result.add(x)
                 queue.extend(self.parents(x))
@@ -44,9 +46,9 @@ class CausalGraphData:
 
     def descendants(self, n: int) -> Set[int]:
         result = set()
-        queue = list(self.children(n))
+        queue = deque(self.children(n))
         while queue:
-            x = queue.pop(0)
+            x = queue.popleft()
             if x not in result:
                 result.add(x)
                 queue.extend(self.children(x))
@@ -59,15 +61,15 @@ class CausalGraphData:
         return len(self.edges)
 
     def is_dag(self) -> bool:
-        """Verify acyclicity via topological sort."""
+        """Verify acyclicity via topological sort (Kahn's algorithm)."""
         N = len(self.nodes)
         in_deg = {n: 0 for n in self.nodes}
         for p, c, _ in self.edges:
             in_deg[c] += 1
-        queue = [n for n in self.nodes if in_deg[n] == 0]
+        queue = deque(n for n in self.nodes if in_deg[n] == 0)
         visited = 0
         while queue:
-            node = queue.pop(0)
+            node = queue.popleft()
             visited += 1
             for ch in self.children(node):
                 in_deg[ch] -= 1
