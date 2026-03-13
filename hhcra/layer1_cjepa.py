@@ -122,8 +122,16 @@ class CJEPA(nn.Module):
         D_lat = config.latent_dim
         N = config.num_vars
 
-        # Encoder: observation -> latent space
-        self.encoder = nn.Linear(D_obs, D_lat)
+        # v0.6.0: Deeper encoder with residual connection
+        # 2-layer MLP preserves more signal from observations
+        hidden_dim = max(D_lat * 2, D_obs // 2)
+        self.encoder = nn.Sequential(
+            nn.Linear(D_obs, hidden_dim),
+            nn.GELU(),
+            nn.Linear(hidden_dim, D_lat),
+        )
+        # Residual projection (skip connection from obs to latent space)
+        self.encoder_skip = nn.Linear(D_obs, D_lat, bias=False)
 
         # Slot attention (competitive, v0.4.1)
         self.slot_attention = SlotAttention(N, D_lat, num_iters=config.slot_attention_iters)
@@ -155,7 +163,9 @@ class CJEPA(nn.Module):
         prev_slots = torch.zeros(B, N, D, device=observations.device)
 
         for t in range(T):
-            z = torch.tanh(self.encoder(observations[:, t, :]))  # (B, D)
+            obs_t = observations[:, t, :]
+            # v0.6.0: Deep encoder + residual skip connection
+            z = torch.tanh(self.encoder(obs_t) + self.encoder_skip(obs_t))  # (B, D)
             slots = self.slot_attention(z)  # (B, N, D)
 
             if t > 0:

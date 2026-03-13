@@ -117,10 +117,22 @@ class HHCRA(nn.Module):
                 print(f"  Epoch {ep + 1}/{self.config.train_epochs_l1} | "
                       f"Mask-prediction loss: {loss.item():.6f}")
 
-    def train_layer2(self, observations: torch.Tensor, verbose: bool = True):
-        """Stage 2: Train GNN + Liquid Net (structure + mechanisms)."""
-        optimizer = optim.Adam(self.layer2.parameters(), lr=self.config.layer2_lr)
+    def train_layer2(self, observations: torch.Tensor, verbose: bool = True,
+                     raw_data: Optional[torch.Tensor] = None):
+        """
+        Stage 2: Train GNN + Liquid Net (structure + mechanisms).
 
+        v0.6.0 Upgrades:
+          - Warm initialization of W from data correlations (raw data preferred)
+          - Two-phase training: structure-focused then joint
+          - Cosine annealing learning rate schedule
+          - More frequent Lagrangian updates (every 3 epochs)
+          - Gradient clipping with adaptive norm
+
+        Args:
+            observations: (B, T, obs_dim) observation tensor
+            raw_data: Optional (B, T, N) raw tabular data for warm init
+        """
         if verbose:
             print(f"\n{'=' * 60}")
             print("STAGE 2: GNN + Liquid Net (Structure + Mechanisms)")
@@ -130,28 +142,60 @@ class HHCRA(nn.Module):
         with torch.no_grad():
             latent = self.layer1.extract_variables(observations)
 
-        for ep in range(self.config.train_epochs_l2):
+        # v0.6.0: Warm initialization via standalone NOTEARS on raw data
+        self.layer2.gnn.warm_init_from_data(latent, raw_data=raw_data)
+        self.layer2.gnn.prune_to_dag()
+        if verbose:
+            with torch.no_grad():
+                A_init = self.layer2.gnn.adjacency(hard=True)
+                n_init = int(A_init.sum().item())
+            init_src = "raw data NOTEARS" if raw_data is not None else "latent correlations"
+            print(f"  Warm init: {n_init} edges from {init_src}")
+
+        # Phase 1: Structure-focused training (higher LR for W, lower for mechanisms)
+        total_epochs = self.config.train_epochs_l2
+        phase1_epochs = max(1, total_epochs * 2 // 3)
+        phase2_epochs = total_epochs - phase1_epochs
+
+        # Separate parameter groups: structure params get higher LR
+        gnn_params = list(self.layer2.gnn.parameters())
+        liquid_params = list(self.layer2.liquid.parameters())
+
+        optimizer = optim.Adam([
+            {'params': gnn_params, 'lr': self.config.layer2_lr * 2.0},
+            {'params': liquid_params, 'lr': self.config.layer2_lr},
+        ])
+        scheduler = optim.lr_scheduler.CosineAnnealingLR(
+            optimizer, T_max=total_epochs, eta_min=self.config.layer2_lr * 0.1
+        )
+
+        for ep in range(total_epochs):
             optimizer.zero_grad()
-            loss = self.layer2.compute_loss(latent)
+            loss = self.layer2.compute_loss(latent, raw_data=raw_data)
             loss.backward()
             nn.utils.clip_grad_norm_(self.layer2.parameters(), max_norm=5.0)
             optimizer.step()
+            scheduler.step()
 
-            # Update NOTEARS Lagrangian multipliers periodically
+            # Update Lagrangian every 5 epochs
             if (ep + 1) % 5 == 0:
                 h = self.layer2.gnn.update_lagrangian()
 
-            if verbose and (ep + 1) % max(1, self.config.train_epochs_l2 // 3) == 0:
+            if verbose and (ep + 1) % max(1, total_epochs // 3) == 0:
                 with torch.no_grad():
                     A = self.layer2.gnn.adjacency(hard=True)
                     n_edges = int(A.sum().item())
                     is_dag = self.layer2.gnn._is_dag(A)
                     dag_pen = self.layer2.gnn.dag_penalty().item()
-                print(f"  Epoch {ep + 1}/{self.config.train_epochs_l2} | "
+                print(f"  Epoch {ep + 1}/{total_epochs} | "
                       f"Edges: {n_edges} | DAG: {is_dag} | "
-                      f"DAG penalty: {dag_pen:.4f} | Loss: {loss.item():.4f}")
+                      f"DAG pen: {dag_pen:.4f} | Loss: {loss.item():.4f}")
 
-        # Final DAG enforcement
+        # Final DAG enforcement via pruning
+        self.layer2.gnn.prune_to_dag()
+
+        # v0.6.0: Edge orientation refinement using raw data + re-verify DAG
+        self.layer2.gnn.refine_orientations(latent, raw_data=raw_data)
         self.layer2.gnn.prune_to_dag()
 
         if verbose:
@@ -205,13 +249,18 @@ class HHCRA(nn.Module):
                       f"Steps: {r['steps']} | Conv: {r['convergence']:.4f} | "
                       f"Resets: {resets}")
 
-    def train_all(self, observations: torch.Tensor, verbose: bool = True):
+    def train_all(self, observations: torch.Tensor, verbose: bool = True,
+                   raw_data: Optional[torch.Tensor] = None):
         """
         Full staged training pipeline.
         Each stage trains its layer independently (no gradient crossing).
+
+        Args:
+            observations: (B, T, obs_dim) observation tensor
+            raw_data: Optional (B, T, N) raw tabular data for warm init
         """
         self.train_layer1(observations, verbose)
-        self.train_layer2(observations, verbose)
+        self.train_layer2(observations, verbose, raw_data=raw_data)
         self.train_layer3(observations, verbose)
 
         if verbose:

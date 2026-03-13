@@ -25,7 +25,7 @@ class HHCRAConfig:
     gnn_lr: float = 0.05
     gnn_l1_penalty: float = 0.02
     gnn_dag_penalty: float = 0.5
-    edge_threshold: float = 0.35
+    edge_threshold: float = 0.30  # v0.6.0: lowered from 0.35 (adaptive threshold overrides)
     notears_lambda: float = 0.01
     notears_rho: float = 1.0
     notears_rho_max: float = 1e16

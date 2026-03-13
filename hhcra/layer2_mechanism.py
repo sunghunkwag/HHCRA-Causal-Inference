@@ -40,6 +40,11 @@ class CausalGNN(nn.Module):
 
     Uses augmented Lagrangian method:
         L(W, alpha, rho) = F(W) + lambda*||W||_1 + alpha*h(W) + (rho/2)*h(W)^2
+
+    v0.6.0 Upgrades:
+      - Correlation-based W initialization (warm_init_from_data)
+      - Adaptive edge threshold via weight-gap detection
+      - Edge orientation refinement via residual variance
     """
 
     def __init__(self, config: HHCRAConfig):
@@ -74,12 +79,201 @@ class CausalGNN(nn.Module):
         self.notears_alpha = 0.0
         self.notears_rho = config.notears_rho
 
+    def warm_init_from_data(self, latent: torch.Tensor,
+                            raw_data: Optional[torch.Tensor] = None):
+        """
+        v0.6.0: Initialize W from data using standalone NOTEARS solver.
+
+        When raw_data is provided, runs a fast standalone NOTEARS with
+        GOLEM-NV loss to get an initial structure, then injects the result
+        into the GNN's W matrix.
+
+        Without raw_data, falls back to correlation-based initialization.
+        """
+        N = self.config.num_vars
+
+        if raw_data is not None:
+            # _warm_init_notears needs gradients for its internal optimization
+            self._warm_init_notears(raw_data)
+            return
+
+        with torch.no_grad():
+            # Fallback: use latent data correlations
+            B, T, N_lat, D = latent.shape
+            if T < 2:
+                return
+
+            x_c = latent.mean(dim=-1).reshape(-1, N_lat)
+            n = x_c.shape[0]
+            x_c = (x_c - x_c.mean(0, keepdim=True)) / (x_c.std(0, keepdim=True) + 1e-8)
+            corr = (x_c.T @ x_c) / n
+            score = corr.abs()[:N, :N] * self.diag_mask
+            w_init = (score - score.mean()) * 0.3
+            self.W.data.copy_(w_init)
+
+    def _warm_init_notears(self, raw_data: torch.Tensor):
+        """
+        v0.6.0: Initialize W by running fast standalone NOTEARS on raw data.
+
+        Runs a lightweight NOTEARS with GOLEM-NV loss (direction-sensitive)
+        to get an initial adjacency matrix, then converts to GNN W format.
+
+        This gives HHCRA the benefit of a proper NOTEARS solution as starting
+        point, which the neural components then refine for mechanism learning.
+        """
+        N = self.config.num_vars
+
+        if raw_data.dim() == 3:
+            X = raw_data.reshape(-1, raw_data.shape[-1])
+        else:
+            X = raw_data
+
+        N_raw = X.shape[1]
+        N_use = min(N, N_raw)
+        X = X[:, :N_use].float()
+        n = X.shape[0]
+
+        if n < 20:
+            return
+
+        # Standardize
+        X_std = (X - X.mean(0, keepdim=True)) / (X.std(0, keepdim=True) + 1e-8)
+
+        # Run fast NOTEARS with GOLEM-NV loss
+        # W_nt[j,i] = influence of j on i (standard NOTEARS convention)
+        W_nt = torch.zeros(N_use, N_use, requires_grad=True,
+                           device=self.W.device)
+        diag_mask_nt = (1.0 - torch.eye(N_use, device=self.W.device))
+
+        alpha = 0.0
+        rho = 1.0
+        h_old = float('inf')
+
+        # Fast: fewer outer iterations, fewer inner steps
+        for outer in range(30):
+            optimizer = torch.optim.Adam([W_nt], lr=0.005)
+            for _ in range(100):
+                optimizer.zero_grad()
+                Wm = W_nt * diag_mask_nt
+                residual = X_std - X_std @ Wm  # (n, N_use)
+                per_var_mse = torch.sum(residual ** 2, dim=0) / n
+                nll = torch.sum(torch.log(per_var_mse + 1e-10))
+                l1 = 0.05 * torch.abs(Wm).sum()
+                M = Wm * Wm
+                h = torch.trace(torch.matrix_exp(M)) - N_use
+                h = h.clamp(min=0.0)
+                loss = nll + l1 + alpha * h + 0.5 * rho * h * h
+                loss.backward()
+                optimizer.step()
+
+            with torch.no_grad():
+                Wm = W_nt * diag_mask_nt
+                M = Wm * Wm
+                h_new = (torch.trace(torch.matrix_exp(M)) - N_use).clamp(min=0).item()
+
+            if h_new > 0.25 * h_old:
+                rho = min(rho * 10.0, 1e12)
+            alpha += rho * h_new
+            h_old = h_new
+
+            if h_new < 1e-8:
+                break
+
+        # Convert NOTEARS result to GNN W format
+        # NOTEARS: W_nt[j,i] = j → i (positive weight = causal edge)
+        # GNN: self.W[i,j] = j influences i, sigmoid(W[i,j]) = edge strength
+        # So: self.W[i,j] should be positive when W_nt[j,i] is large
+        #     and negative when W_nt[j,i] is small
+        with torch.no_grad():
+            W_result = (W_nt * diag_mask_nt).detach()
+            # W_result[j,i] = coefficient for j → i
+
+            # Transpose: W_gnn[i,j] = W_result[j,i]
+            W_gnn = W_result.T  # (N_use, N_use)
+
+            # Identify significant edges using absolute weight threshold
+            threshold = 0.1
+            is_edge = (torch.abs(W_gnn) > threshold)
+
+            # Map to sigmoid-W space:
+            # Strong edges → positive W (sigmoid > 0.5)
+            # Non-edges → negative W (sigmoid < 0.5)
+            w_init = torch.full((N, N), -3.0, device=self.W.device)
+
+            for i in range(N_use):
+                for j in range(N_use):
+                    if i == j:
+                        continue
+                    val = W_gnn[i, j].item()
+                    if abs(val) > threshold:
+                        # Edge present: set W proportional to strength
+                        # sigmoid(2.0) ≈ 0.88, sigmoid(1.0) ≈ 0.73
+                        strength = min(abs(val), 1.0)
+                        w_init[i, j] = 1.0 + strength * 2.0
+                    else:
+                        # No edge: set W negative
+                        w_init[i, j] = -3.0
+
+            w_init = w_init * self.diag_mask
+            self.W.data.copy_(w_init)
+
     def adjacency(self, hard: bool = False) -> torch.Tensor:
         """Sigmoid-activated adjacency with self-loop mask."""
         A = torch.sigmoid(self.W) * self.diag_mask
         if hard:
-            A = (A > self.config.edge_threshold).float()
+            threshold = self._adaptive_threshold(A)
+            A = (A > threshold).float()
         return A
+
+    def _adaptive_threshold(self, A: torch.Tensor) -> float:
+        """
+        v0.6.0: Compute adaptive edge threshold based on weight distribution.
+
+        Instead of a fixed threshold, find the natural gap between
+        "background" (non-edge) and "foreground" (edge) weights using
+        Otsu's method adapted for edge weights.
+
+        Falls back to config.edge_threshold if no clear gap is found.
+        """
+        with torch.no_grad():
+            weights = A[self.diag_mask.bool()].cpu().numpy()
+            if len(weights) == 0:
+                return self.config.edge_threshold
+
+            # Sort weights and find the best split point (Otsu's method)
+            sorted_w = np.sort(weights)
+            n = len(sorted_w)
+            best_thresh = self.config.edge_threshold
+            best_score = -1.0
+
+            # Test candidate thresholds at percentiles
+            for pct in np.arange(0.3, 0.9, 0.05):
+                idx = int(pct * n)
+                if idx == 0 or idx >= n:
+                    continue
+                thresh = sorted_w[idx]
+                bg = sorted_w[:idx]
+                fg = sorted_w[idx:]
+                if len(bg) == 0 or len(fg) == 0:
+                    continue
+
+                # Inter-class variance (Otsu criterion)
+                w_bg = len(bg) / n
+                w_fg = len(fg) / n
+                mu_bg = bg.mean()
+                mu_fg = fg.mean()
+                score = w_bg * w_fg * (mu_fg - mu_bg) ** 2
+
+                if score > best_score:
+                    best_score = score
+                    best_thresh = thresh
+
+            # Only use adaptive threshold if there's a clear gap
+            # (inter-class variance significantly higher than uniform)
+            uniform_var = np.var(weights) * 0.25
+            if best_score > uniform_var and 0.2 < best_thresh < 0.8:
+                return float(best_thresh)
+            return self.config.edge_threshold
 
     def _h_dag(self, W: torch.Tensor) -> torch.Tensor:
         """
@@ -100,51 +294,79 @@ class CausalGNN(nn.Module):
         """Continuous DAG penalty for loss function."""
         return self._h_dag(self.W)
 
-    def notears_loss(self, latent: torch.Tensor) -> torch.Tensor:
+    def notears_loss(self, latent: torch.Tensor,
+                     raw_data: Optional[torch.Tensor] = None) -> torch.Tensor:
         """
         NOTEARS augmented Lagrangian loss:
         L = F(W) + lambda*||W||_1 + alpha*h(W) + (rho/2)*h(W)^2
 
         v0.4.1 FIX: F(W) now uses the standard NOTEARS formulation:
           F(W) = 0.5/n * sum_d ||X_next[:,:,d] - X_curr[:,:,d] @ A||^2
-        computed per latent dimension d, preserving per-variable variance
-        information critical for structure identification.
 
-        Previous issue: edge_net collapsed latent dim to scalar via mean,
-        destroying the per-variable signal that distinguishes causal from
-        spurious edges (Zheng et al. 2018 Eq. 2).
+        v0.6.0: When raw_data is provided, computes fitting loss on both
+        raw data and latent data. Raw data preserves the true causal signal
+        that may be lost during Layer 1 encoding.
         """
-        B, T, N, D = latent.shape
-        if T < 2:
-            return torch.tensor(0.0, device=latent.device)
-
         A = self.adjacency()
+        N = A.shape[0]
 
-        x_curr = latent[:, :-1, :, :]  # (B, T-1, N, D)
-        x_next = latent[:, 1:, :, :]   # (B, T-1, N, D)
+        # v0.6.0: Fitting loss from raw data using GOLEM-NV (direction-sensitive)
+        raw_fitting_loss = torch.tensor(0.0, device=latent.device)
+        if raw_data is not None and raw_data.dim() == 3:
+            B_raw, T_raw, N_raw = raw_data.shape
+            N_use = min(N, N_raw)
+            X = raw_data.reshape(-1, N_raw)[:, :N_use]  # (n, N_use)
+            n = X.shape[0]
+            if n > 10:
+                # GOLEM-NV log-likelihood (Ng et al., NeurIPS 2020):
+                # L = sum_i log(1/n * ||X_i - X @ W[:,i]||^2)
+                # This correctly identifies direction when noise variances differ.
+                #
+                # Convention adaptation: GNN uses A[i,j] = j influences i
+                # NOTEARS uses W[j,i] = j influences i
+                # So W = A^T, and X @ W = X @ A^T
+                A_sub = A[:N_use, :N_use]
+                residual = X - X @ A_sub.T  # (n, N_use)
+                per_var_mse = torch.sum(residual ** 2, dim=0) / n  # (N_use,)
+                raw_fitting_loss = torch.sum(torch.log(per_var_mse + 1e-10))
 
-        n_samples = B * (T - 1)
-        xc = x_curr.reshape(n_samples, N, D)
-        xn = x_next.reshape(n_samples, N, D)
+        # Fitting loss from latent data (secondary signal)
+        B, T, N_lat, D = latent.shape
+        latent_fitting_loss = torch.tensor(0.0, device=latent.device)
+        if T >= 2:
+            x_curr = latent[:, :-1, :, :]
+            x_next = latent[:, 1:, :, :]
+            n_samples = B * (T - 1)
+            xc = x_curr.reshape(n_samples, N_lat, D)
+            xn = x_next.reshape(n_samples, N_lat, D)
+            pred = torch.einsum('ij,njd->nid', A[:N_lat, :N_lat], xc)
+            latent_fitting_loss = 0.5 * torch.mean((xn - pred) ** 2)
 
-        pred = torch.einsum('ij,njd->nid', A, xc)  # (n, N, D)
-        fitting_loss = 0.5 * torch.mean((xn - pred) ** 2)
+        # Combine: raw data fitting is primary when available
+        if raw_data is not None:
+            fitting_loss = 0.8 * raw_fitting_loss + 0.2 * latent_fitting_loss
+        else:
+            fitting_loss = latent_fitting_loss
 
         l1_loss = self.config.notears_lambda * torch.abs(A).sum()
-
         h = self._h_dag(self.W)
         dag_loss = self.notears_alpha * h + (self.notears_rho / 2.0) * h * h
 
         return fitting_loss + l1_loss + dag_loss
 
     def update_lagrangian(self):
-        """Update NOTEARS augmented Lagrangian multipliers."""
+        """
+        Update NOTEARS augmented Lagrangian multipliers.
+
+        v0.6.0: Gentler rho escalation (×2 instead of ×10) to prevent
+        loss explosion when warm initialization creates near-cyclic structures.
+        """
         with torch.no_grad():
             h = self._h_dag(self.W).item()
             self.notears_alpha += self.notears_rho * h
             if h > 0.25 * getattr(self, '_prev_h', 1e10):
                 self.notears_rho = min(
-                    self.notears_rho * 10.0,
+                    self.notears_rho * 2.0,  # v0.6.0: was 10.0, now gentler
                     self.config.notears_rho_max
                 )
             self._prev_h = h
@@ -169,6 +391,87 @@ class CausalGNN(nn.Module):
                     if in_degree[child] == 0:
                         queue.append(child)
         return visited == N
+
+    def refine_orientations(self, latent: torch.Tensor,
+                            raw_data: Optional[torch.Tensor] = None):
+        """
+        v0.6.0: Post-training edge orientation refinement.
+
+        For each learned edge (i,j), test whether j->i or i->j is more
+        consistent with the data by comparing regression residual variances.
+
+        Uses raw_data when available (much better signal than lossy latent).
+
+        The asymmetry works because in a linear SEM X_i = c*X_j + noise:
+        - Forward regression (X_i ~ X_j) has residual var = Var(noise)
+        - Reverse regression (X_j ~ X_i) has residual var > Var(noise)
+        So the true causal direction has lower residual variance.
+        """
+        with torch.no_grad():
+            A = self.adjacency(hard=True)
+            if not self._is_dag(A):
+                return
+
+            N = self.config.num_vars
+
+            # Use raw data if available (much cleaner signal)
+            if raw_data is not None:
+                if raw_data.dim() == 3:
+                    X = raw_data.reshape(-1, raw_data.shape[-1])[:, :N]
+                else:
+                    X = raw_data[:, :N]
+            else:
+                # Fallback to latent data
+                if latent.dim() == 4:
+                    X = latent.mean(dim=-1).reshape(-1, latent.shape[2])[:, :N]
+                else:
+                    return
+
+            if X.shape[0] < 20:
+                return
+
+            # v0.6.0: Do NOT standardize — residual variance test requires
+            # original variances to distinguish causal direction.
+            # On standardized data, Var(X_i|X_j) = Var(X_j|X_i) = 1 - corr²,
+            # making the test symmetric and useless for orientation.
+            X = X - X.mean(0, keepdim=True)  # Center only, preserve variances
+
+            edges_to_flip = []
+            As = self.adjacency(hard=False)
+
+            for i in range(N):
+                for j in range(N):
+                    if A[i, j] < 0.5 or i == j:
+                        continue
+                    # Current edge: j -> i (A[i,j] means j influences i)
+                    xi = X[:, i]
+                    xj = X[:, j]
+
+                    if xi.std() < 1e-8 or xj.std() < 1e-8:
+                        continue
+
+                    # Residual variance for j->i: regress X_i on X_j
+                    beta_ji = (xj * xi).mean() / (xj.var() + 1e-8)
+                    resid_ji = (xi - beta_ji * xj).var()
+
+                    # Residual variance for i->j: regress X_j on X_i
+                    beta_ij = (xi * xj).mean() / (xi.var() + 1e-8)
+                    resid_ij = (xj - beta_ij * xi).var()
+
+                    # If i->j has lower residual, flip the edge
+                    # Require significant difference (>10% improvement)
+                    if resid_ij < resid_ji * 0.9:
+                        edges_to_flip.append((i, j, float(As[i, j]),
+                                              float(resid_ji), float(resid_ij)))
+
+            # Apply ALL flips at once (avoids one-at-a-time cycle issues)
+            # Then re-enforce DAG via pruning
+            if edges_to_flip:
+                W_backup = self.W.data.clone()
+                for i, j, w, rji, rij in edges_to_flip:
+                    old_w = self.W.data[i, j].item()
+                    self.W.data[i, j] = -5.0        # Remove current edge
+                    self.W.data[j, i] = max(old_w, 1.0)  # Add reversed edge
 
     def prune_to_dag(self):
         """Post-training: greedily remove weakest edges until DAG.
@@ -583,12 +886,17 @@ class MechanismLayer(nn.Module):
             'trajectories': trajectories,
         }
 
-    def compute_loss(self, latent: torch.Tensor) -> torch.Tensor:
+    def compute_loss(self, latent: torch.Tensor,
+                     raw_data: Optional[torch.Tensor] = None) -> torch.Tensor:
         """Combined NOTEARS + mechanism fitting loss.
 
         adjacency() is evaluated once and reused to avoid redundant computation.
+
+        Args:
+            latent: (B, T, N, D) latent variables from Layer 1
+            raw_data: Optional (B, T, N_raw) raw tabular data for NOTEARS fitting
         """
-        structure_loss = self.gnn.notears_loss(latent)
+        structure_loss = self.gnn.notears_loss(latent, raw_data=raw_data)
 
         embeddings = self.gnn.message_pass(latent)
         adjacency = self.gnn.adjacency()
