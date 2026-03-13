@@ -111,8 +111,8 @@ Evaluated on a 5-graph benchmark suite (chain, fork, collider, diamond, 8-variab
 - **ODE accuracy**: RK4 achieves machine-precision integration error ($\sim 10^{-19}$).
 
 ### Dependencies
-- **Full architecture**: Python >= 3.8, PyTorch >= 2.0, SciPy >= 1.10, torchdiffeq >= 0.2.3, pytest >= 7.0
-- **Standalone prototype** (`hhcra_v2.py`): NumPy and SciPy only (CPU, no PyTorch dependency).
+- **Full architecture** (`hhcra/`): Python >= 3.8, PyTorch >= 2.0, NumPy >= 1.24, SciPy >= 1.10, pytest >= 7.0. ODE integration (RK4, DOPRI5) is implemented directly; `torchdiffeq` is not used.
+- **Standalone prototype** (`hhcra_v2.py`): NumPy and SciPy only. No PyTorch dependency.
 
 ### Execution
 ```bash
