@@ -1,6 +1,6 @@
 # HHCRA: Hierarchical Hybrid Causal Reasoning Architecture
 
-![Tests](https://img.shields.io/badge/tests-146%2F146%20passing-brightgreen)
+![Tests](https://img.shields.io/badge/tests-170%2F170%20passing-brightgreen)
 ![Python](https://img.shields.io/badge/python-%3E%3D3.8-blue)
 ![License](https://img.shields.io/badge/license-MIT-green)
 
@@ -75,6 +75,13 @@ flowchart TD
 - **Inference Engine**: Algorithmic implementation of Pearl's three rules of do-calculus and the ID-Algorithm (Tian & Pearl, 2002).
 - **Counterfactuals**: Evaluation via the Abduction-Action-Prediction (ABP) protocol using MLE exogenous noise estimation.
 
+## Changelog (v0.5.0)
+
+- **Bugfix**: Counterfactual ABP procedure now correctly uses modified adjacency (`mod_adj`) with incoming edges cut, fixing Rung 3 predictions.
+- **Performance**: BFS algorithms use `deque.popleft()` (O(1)) instead of `list.pop(0)` (O(n)); Layer 1 `compute_loss` vectorized over T dimension; `itertools.combinations` replaces recursive subset enumeration.
+- **Stability**: Gradient clipping (max_norm=5.0) in all training stages; DAG penalty clamped non-negative; import cleanup.
+- **Validation**: Config validation extended to HRM and training parameters; 24 new tests added.
+
 ## Technical Constraints & Assumptions
 
 - **Acyclicity Requirement**: The structure discovery module (NOTEARS) assumes a Directed Acyclic Graph (DAG) topology. Accuracy on graphs containing feedback loops is not guaranteed.
@@ -86,7 +93,7 @@ flowchart TD
 
 The implementation has been verified against a 5-graph benchmark suite.
 
-- **Unit Tests**: 146/146 passed (Verified locally via `pytest tests/ -v`).
+- **Unit Tests**: 170/170 passed (Verified locally via `pytest tests/ -v`).
 - **Dependencies**:
     - **Intended Architecture**: Python ≥ 3.8, PyTorch ≥ 2.0, SciPy, `torchdiffeq` (required for the full GPU-accelerated framework).
     - **Local Prototype (`hhcra_v2.py`)**: Strictly depends only on **NumPy and SciPy** for local CPU execution, ensuring accessibility on standard laptop hardware.
