@@ -12,6 +12,7 @@ All layers are nn.Module subclasses with proper gradient flow.
 
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 import torch.optim as optim
 import numpy as np
 from typing import Optional
@@ -109,6 +110,7 @@ class HHCRA(nn.Module):
             optimizer.zero_grad()
             loss = self.layer1.compute_loss(observations)
             loss.backward()
+            nn.utils.clip_grad_norm_(self.layer1.parameters(), max_norm=5.0)
             optimizer.step()
 
             if verbose and (ep + 1) % max(1, self.config.train_epochs_l1 // 3) == 0:
@@ -132,6 +134,7 @@ class HHCRA(nn.Module):
             optimizer.zero_grad()
             loss = self.layer2.compute_loss(latent)
             loss.backward()
+            nn.utils.clip_grad_norm_(self.layer2.parameters(), max_norm=5.0)
             optimizer.step()
 
             # Update NOTEARS Lagrangian multipliers periodically
@@ -192,6 +195,7 @@ class HHCRA(nn.Module):
                 if isinstance(r2['result'], torch.Tensor) and r2['result'].requires_grad:
                     total_loss = 0.01 * stability_loss + 0.01 * r2['result'].norm()
                     total_loss.backward()
+                    nn.utils.clip_grad_norm_(self.layer3.hrm.parameters(), max_norm=5.0)
                     optimizer.step()
 
             if verbose and (ep + 1) % max(1, self.config.train_epochs_l3 // 3) == 0:
@@ -278,7 +282,3 @@ class HHCRA(nn.Module):
         ])
 
         return "\n".join(lines)
-
-
-# Import F at module level for train_layer3
-import torch.nn.functional as F

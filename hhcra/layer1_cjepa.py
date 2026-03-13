@@ -174,27 +174,28 @@ class CJEPA(nn.Module):
         """
         Compute mask-prediction loss for training.
         Masks random variable slots and predicts from context.
+
+        v0.5.0: Vectorized over T dimension (eliminates inner loop).
+        Per-batch masking is retained to ensure diverse mask patterns.
         """
         latent = self.extract_variables(observations)
         B, T, N, D = latent.shape
         num_mask = max(1, int(N * self.config.mask_ratio))
 
         total_loss = torch.tensor(0.0, device=observations.device)
-        count = 0
 
         for b in range(B):
             mask_idx = torch.randperm(N, device=observations.device)[:num_mask]
             visible_mask = torch.ones(N, dtype=torch.bool, device=observations.device)
             visible_mask[mask_idx] = False
 
-            for t in range(T):
-                target = latent[b, t, mask_idx, :]  # (num_mask, D)
-                context = latent[b, t, visible_mask, :].mean(dim=0)  # (D,)
-                pred = self.predictor(context).unsqueeze(0).expand(num_mask, -1)
-                total_loss = total_loss + F.mse_loss(pred, target.detach())
-                count += 1
+            # Vectorized over T: (T, num_mask, D) and (T, D)
+            target = latent[b, :, mask_idx, :]  # (T, num_mask, D)
+            context = latent[b, :, visible_mask, :].mean(dim=1)  # (T, D)
+            pred = self.predictor(context).unsqueeze(1).expand(-1, num_mask, -1)  # (T, num_mask, D)
+            total_loss = total_loss + F.mse_loss(pred, target.detach())
 
-        loss = total_loss / max(count, 1)
+        loss = total_loss / B
         self.loss_history.append(loss.item())
         return loss
 

@@ -85,13 +85,16 @@ class CausalGNN(nn.Module):
         """
         DAG constraint: h(W) = tr(e^(W o W)) - d
         Must equal 0 for W to encode a DAG.
+
+        v0.5.0: Clamp result to avoid negative values from floating-point
+        drift when h(W) is very close to zero.
         """
         N = W.shape[0]
         A = torch.sigmoid(W) * self.diag_mask
         M = A * A  # Element-wise square (Hadamard)
         E = torch.matrix_exp(M)
         h = torch.trace(E) - N
-        return h
+        return h.clamp(min=0.0)
 
     def dag_penalty(self) -> torch.Tensor:
         """Continuous DAG penalty for loss function."""

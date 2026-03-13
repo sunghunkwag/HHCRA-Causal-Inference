@@ -74,3 +74,24 @@ class HHCRAConfig:
         assert self.liquid_method in ("euler", "rk4", "dopri5"), (
             f"liquid_method must be one of 'euler', 'rk4', 'dopri5', got '{self.liquid_method}'"
         )
+        assert self.hrm_hidden_dim > 0, (
+            f"hrm_hidden_dim must be positive, got {self.hrm_hidden_dim}"
+        )
+        assert self.hrm_max_steps > 0, (
+            f"hrm_max_steps must be positive, got {self.hrm_max_steps}"
+        )
+        assert self.hrm_update_interval > 0, (
+            f"hrm_update_interval must be positive, got {self.hrm_update_interval}"
+        )
+        assert 0.0 <= self.hrm_momentum < 1.0, (
+            f"hrm_momentum must be in [0, 1), got {self.hrm_momentum}"
+        )
+        assert self.train_epochs_l1 > 0, (
+            f"train_epochs_l1 must be positive, got {self.train_epochs_l1}"
+        )
+        assert self.train_epochs_l2 > 0, (
+            f"train_epochs_l2 must be positive, got {self.train_epochs_l2}"
+        )
+        assert self.train_epochs_l3 > 0, (
+            f"train_epochs_l3 must be positive, got {self.train_epochs_l3}"
+        )
