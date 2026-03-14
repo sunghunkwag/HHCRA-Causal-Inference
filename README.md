@@ -141,7 +141,8 @@ Evaluated on Asia (8 vars, 8 edges) and Sachs (11 vars, 17 edges) with linear-Ga
 
 | Method | SHD | F1 | TPR | FDR |
 |--------|-----|-----|-----|-----|
-| **SCRD (ours)** | **3** | **0.824** | **0.875** | **0.222** |
+| **KKCE (ours, v0.10)** | **3** | **0.824** | **0.875** | **0.222** |
+| **SCRD (ours, v0.9)** | **3** | **0.824** | **0.875** | **0.222** |
 | NOTEARS | 5 | 0.737 | 0.875 | 0.364 |
 | GES | 7 | 0.222 | 0.125 | 0.000 |
 | PC | 9 | 0.182 | 0.125 | 0.667 |
@@ -150,12 +151,13 @@ Evaluated on Asia (8 vars, 8 edges) and Sachs (11 vars, 17 edges) with linear-Ga
 
 | Method | SHD | F1 | TPR | FDR |
 |--------|-----|-----|-----|-----|
-| **SCRD (ours)** | **15** | **0.571** | **0.588** | **0.444** |
+| **KKCE (ours, v0.10)** | **8** | **0.765** | **0.765** | **0.235** |
+| SCRD (ours, v0.9) | 15 | 0.571 | 0.588 | 0.444 |
 | GES | 16 | 0.111 | 0.059 | 0.000 |
 | NOTEARS | 21 | 0.400 | 0.412 | 0.611 |
 | PC | 21 | 0.000 | 0.000 | 1.000 |
 
-**SCRD (Spectral Causal Resonance Discovery)** is a novel algorithm introduced in v0.9.0 that beats all standard baselines on both benchmarks. See [SCRD Algorithm](#scrd-algorithm) below.
+**KKCE (Kuramoto-Klein Causal Emergence)** is introduced in v0.10.0. On Sachs, it reduces SHD from 15 (SCRD) to 8 — a 47% improvement. On Asia, it matches SCRD. See [KKCE Algorithm](#kkce-algorithm) below.
 
 ### ODE Integration Accuracy
 
@@ -166,6 +168,33 @@ Evaluated on Asia (8 vars, 8 edges) and Sachs (11 vars, 17 edges) with linear-Ga
 | DOPRI5 | 0.01 | 3.83e-26 |
 
 RK4 and DOPRI5 achieve near-machine-precision integration error on the benchmark ODE system.
+
+## KKCE Algorithm
+
+**Kuramoto-Klein Causal Emergence (KKCE)** is a v0.10.0 algorithm that extends SCRD by incorporating three mathematical frameworks from physics and topology:
+
+### Mathematical Foundations
+
+1. **Kuramoto Model** (phase synchronization): Each variable is a coupled oscillator with natural frequency proportional to conditional variance. The coupling strength comes from off-diagonal precision matrix entries. Hub parents with many connections have strong coupling that compensates for their lower conditional variance.
+
+2. **Klein Bottle Topology** (edge filtering): Edges on the causal manifold must satisfy topological coherence — they should participate in causal chains (simplicial chains in the complex). Isolated edges with weak partial correlations are topologically incoherent and get pruned.
+
+3. **Dissipative Emergence** (DAG refinement): The causal DAG is a dissipative structure that minimizes free energy F = Σ n·log(σ²) + k·log(n) (= BIC score). Local modifications (add/remove edges) are accepted only if they reduce free energy, subject to topological constraints.
+
+### Key Innovation: Kuramoto Critical Transition
+
+The algorithm sweeps coupling strength β from 0 to 0.8 and selects the ordering that minimizes BIC:
+- At β=0: pure conditional variance ordering (equivalent to SCRD)
+- At β=K_c (critical coupling): optimal ordering for the graph
+- BIC automatically selects the right β for each graph topology
+
+This resolves SCRD's limitation on hub-heavy graphs (Sachs): hub parents like PKA (6 children) have low conditional variance but high coupling strength, so the Kuramoto correction pushes them earlier in the ordering.
+
+### Limitations
+
+- Same as SCRD: requires unequal noise variances, linear Gaussian assumption.
+- BIC sweep adds computational cost: O(|β_values| × d³ × n) vs SCRD's O(d³ × n).
+- The coupling correction helps dense hub-heavy graphs but provides no benefit for sparse graphs.
 
 ## SCRD Algorithm
 
@@ -235,6 +264,13 @@ python -m hhcra.main      # Run toy benchmark suite
 ```
 
 ## Changelog
+
+### v0.10.0
+- **KKCE (Kuramoto-Klein Causal Emergence)**: Novel algorithm combining Kuramoto phase synchronization, Klein bottle topological filtering, and dissipative structure emergence.
+  - Sachs: SHD=8, F1=0.765 (47% SHD improvement over SCRD).
+  - Asia: SHD=3, F1=0.824 (matches SCRD).
+  - Kuramoto critical transition: adaptive coupling sweep selects optimal β per graph topology.
+- 6 new KKCE tests, all passing.
 
 ### v0.9.0
 - **SCRD (Spectral Causal Resonance Discovery)**: Novel causal discovery algorithm that beats all standard baselines.

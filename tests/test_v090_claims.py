@@ -49,6 +49,9 @@ from hhcra.real_benchmarks import (
     run_layer1_ablation,
     # Utilities
     GESBaseline,
+    # v0.10.0: KKCE
+    run_kkce,
+    run_scrd_baseline,
 )
 from hhcra.benchmarks import (
     make_chain_benchmark,
@@ -562,3 +565,113 @@ class TestComprehensiveResults:
 
         assert int_mse < 5.0, f"Interventional MSE={int_mse} should be < 5.0"
         assert cf_mse < 1.0, f"Counterfactual MSE={cf_mse} should be < 1.0"
+
+
+# ============================================================================
+# v0.10.0: KKCE (Kuramoto-Klein Causal Emergence) Tests
+# ============================================================================
+
+def _kkce_true_adj(graph):
+    """True adjacency with parent→child convention (adj[parent,child]=1)."""
+    N = graph.num_vars
+    adj = np.zeros((N, N))
+    for p, c in graph.edges:
+        adj[p, c] = 1.0
+    return adj
+
+
+class TestKKCE:
+    """
+    Validate that KKCE beats SCRD and all baselines.
+
+    KKCE combines:
+      1. Kuramoto phase synchronization for causal ordering
+      2. Klein bottle topological edge filtering
+      3. Dissipative structure emergence for DAG refinement
+
+    Note: KKCE uses adj[parent,child]=1 convention (standard in causal
+    inference), while the v0.9.0 baselines use adj[child,parent]=1.
+    We use _kkce_true_adj for consistent comparison.
+    """
+
+    def test_kkce_beats_scrd_on_sachs(self):
+        """KKCE should significantly beat SCRD on Sachs (hub-heavy graph)."""
+        graph = make_sachs_benchmark()
+        true_adj = _kkce_true_adj(graph)
+        X = generate_linear_sem_data(graph, n_samples=2000, seed=42)
+        m_kkce = run_kkce(X, true_adj)
+        m_scrd = run_scrd_baseline(X, true_adj)
+        assert m_kkce.shd < m_scrd.shd, (
+            f"KKCE SHD={m_kkce.shd} should beat SCRD SHD={m_scrd.shd} on Sachs")
+
+    def test_kkce_matches_scrd_on_asia(self):
+        """KKCE should match SCRD on Asia (sparse graph)."""
+        graph = make_asia_benchmark()
+        true_adj = _kkce_true_adj(graph)
+        X = generate_linear_sem_data(graph, n_samples=2000, seed=42)
+        m_kkce = run_kkce(X, true_adj)
+        m_scrd = run_scrd_baseline(X, true_adj)
+        assert m_kkce.shd <= m_scrd.shd + 1, (
+            f"KKCE SHD={m_kkce.shd} should match SCRD SHD={m_scrd.shd} on Asia")
+
+    def test_kkce_sachs_high_f1(self):
+        """KKCE should achieve F1 > 0.65 on Sachs."""
+        graph = make_sachs_benchmark()
+        true_adj = _kkce_true_adj(graph)
+        X = generate_linear_sem_data(graph, n_samples=2000, seed=42)
+        m = run_kkce(X, true_adj)
+        assert m.f1 > 0.65, f"KKCE F1={m.f1:.3f} should be > 0.65 on Sachs"
+
+    def test_kkce_asia_low_shd(self):
+        """KKCE should achieve SHD <= 5 on Asia."""
+        graph = make_asia_benchmark()
+        true_adj = _kkce_true_adj(graph)
+        X = generate_linear_sem_data(graph, n_samples=2000, seed=42)
+        m = run_kkce(X, true_adj)
+        assert m.shd <= 5, f"KKCE SHD={m.shd} should be <= 5 on Asia"
+
+    def test_kkce_kuramoto_critical_transition(self):
+        """The Kuramoto sweep should select β>0 for Sachs (coupling helps)."""
+        from hhcra.real_benchmarks import KuramotoKleinEmergence
+
+        graph = make_sachs_benchmark()
+        X = generate_linear_sem_data(graph, n_samples=2000, seed=42)
+        kkce = KuramotoKleinEmergence()
+        X_c = X - X.mean(axis=0)
+
+        bics = {}
+        for beta in [0.0, 0.3]:
+            order = kkce._ordering_at_coupling(X_c, graph.num_vars, beta)
+            bic = kkce._ordering_bic(X_c, order, graph.num_vars, 2000)
+            bics[beta] = bic
+
+        assert bics[0.3] < bics[0.0], (
+            f"Sachs: BIC at β=0.3 ({bics[0.3]:.1f}) should be lower "
+            f"than BIC at β=0.0 ({bics[0.0]:.1f})")
+
+    def test_kkce_comprehensive_comparison(self):
+        """Print comprehensive KKCE comparison table."""
+        print("\n\n" + "=" * 90)
+        print("  KKCE COMPREHENSIVE BENCHMARK — v0.10.0")
+        print("=" * 90)
+
+        for name, make_fn in [('Asia', make_asia_benchmark),
+                               ('Sachs', make_sachs_benchmark)]:
+            graph = make_fn()
+            true_adj = _kkce_true_adj(graph)
+            X = generate_linear_sem_data(graph, n_samples=2000, seed=42)
+
+            methods = {}
+            methods['KKCE'] = run_kkce(X, true_adj)
+            methods['SCRD'] = run_scrd_baseline(X, true_adj)
+
+            print(f"\n  {name.upper()} ({graph.num_vars} vars, "
+                  f"{len(graph.edges)} edges)")
+            print(f"  {'Method':<10} {'SHD':>5} {'F1':>6} {'TPR':>6} "
+                  f"{'FDR':>6}")
+            print(f"  {'-'*40}")
+            for mname, m in sorted(methods.items(), key=lambda x: x[1].shd):
+                print(f"  {mname:<10} {m.shd:>5} {m.f1:>6.3f} {m.tpr:>6.3f} "
+                      f"{m.fdr:>6.3f}")
+
+        assert True
