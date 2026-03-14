@@ -19,7 +19,7 @@ from hhcra.symbolic_genesis import SymbolicGenesisEngine, SymbolicRule
 from hhcra.autocatalytic_causal_net import AutocatalyticCausalNet
 from hhcra.singularity import HHCRASingularity
 
-__version__ = "0.6.0"
+__version__ = "0.8.0"
 __all__ = [
     "HHCRAConfig", "CausalGraphData", "CausalQueryType", "HHCRA",
     "LiquidCausalGraph", "SymbolicGenesisEngine", "SymbolicRule",

@@ -92,6 +92,9 @@ class SlotAttention(nn.Module):
             # This forces slots to compete for the input signal
             attn = F.softmax(attn_logits, dim=1)  # (B, N, 1)
 
+            # v0.8.0: Track per-slot utilization for adaptive slot pruning
+            self.slot_utilization = attn.squeeze(-1).mean(dim=0)  # (N,)
+
             # Weighted value: each slot gets its share
             updates = attn * v  # (B, N, D) via broadcast
 
@@ -180,6 +183,12 @@ class CJEPA(nn.Module):
         latent = torch.stack(all_slots, dim=1)  # (B, T, N, D)
         return latent
 
+    def get_active_slots(self, threshold=0.05):
+        """Return indices of slots with utilization above threshold."""
+        if hasattr(self.slot_attention, 'slot_utilization'):
+            return (self.slot_attention.slot_utilization > threshold).nonzero().flatten()
+        return torch.arange(self.config.num_vars)
+
     def compute_loss(self, observations: torch.Tensor) -> torch.Tensor:
         """
         Compute mask-prediction loss for training.
@@ -206,6 +215,17 @@ class CJEPA(nn.Module):
             total_loss = total_loss + F.mse_loss(pred, target.detach())
 
         loss = total_loss / B
+
+        # v0.8.0: Independence regularization — decorrelate slots
+        # Use slot_attention parameters directly (not full latent graph) to
+        # keep autograd graph small and avoid timeout in multi-call scenarios.
+        slot_mu = self.slot_attention.slot_mu.squeeze(0)  # (N, D)
+        normed_mu = F.normalize(slot_mu, dim=-1)
+        sim_mu = normed_mu @ normed_mu.T  # (N, N)
+        off_diag = sim_mu - torch.eye(N, device=observations.device)
+        independence_loss = off_diag.pow(2).mean()
+        loss = loss + 0.1 * independence_loss
+
         self.loss_history.append(loss.item())
         return loss
 

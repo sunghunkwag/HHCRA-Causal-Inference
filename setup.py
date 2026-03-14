@@ -2,7 +2,7 @@ from setuptools import setup, find_packages
 
 setup(
     name="hhcra",
-    version="0.5.0",
+    version="0.8.0",
     description="Hierarchical Hybrid Causal Reasoning Architecture",
     packages=find_packages(),
     python_requires=">=3.8",

@@ -1,6 +1,6 @@
 # HHCRA: Hierarchical Hybrid Causal Reasoning Architecture
 
-![Tests](https://img.shields.io/badge/tests-267%20passing-brightgreen)
+![Tests](https://img.shields.io/badge/tests-271%20passing-brightgreen)
 ![Python](https://img.shields.io/badge/python-%3E%3D3.8-blue)
 ![License](https://img.shields.io/badge/license-MIT-green)
 
@@ -66,14 +66,14 @@ flowchart TD
 
 Causal Joint Embedding Predictive Architecture (C-JEPA). Slot attention with competitive softmax decomposes observations into $N$ latent variable representations. Temporal consistency is enforced via exponential smoothing. Training objective: masked slot prediction.
 
-**Known issue:** Slot attention does not guarantee bijective correspondence between learned slots and true causal variables. This is the primary bottleneck for end-to-end accuracy (see [Failure Analysis](#failure-analysis)).
+**v0.8.0 improvements:** Adaptive slot count (utilization-based pruning) reduces spurious edges from unused slots. Independence regularization (slot template decorrelation) encourages bijective slot-to-variable correspondence. See [Failure Analysis](#failure-analysis) for remaining limitations.
 
 ### Layer 2: Structure and Mechanism Learning
 
 - **Structure**: NOTEARS (Zheng et al., 2018) augmented Lagrangian formulation: $\min_W F(W) + \lambda \|W\|_1 + \alpha \cdot h(W) + \frac{\rho}{2} h(W)^2$, where $h(W) = \mathrm{tr}(e^{W \circ W}) - d$.
 - **Dynamics**: Liquid Time-Constant Networks (Hasani et al., 2021) with per-variable ODE $dx_i/dt = g_i \cdot (-x_i + f_i(x_i, \mathrm{pa}_i)) / \tau_i$. Integration via RK4.
 
-In v0.6.0, when raw data is available, Layer 2 receives it directly (bypassing Layer 1) for NOTEARS warm initialization. This improves structure learning but removes the end-to-end perception-to-structure pipeline.
+In v0.6.0, when raw data is available, Layer 2 receives it directly (bypassing Layer 1) for warm initialization. v0.8.0 upgrades this to use temporal Granger regression (SHD 1-4) instead of cross-sectional NOTEARS for initialization, exploiting temporal asymmetry.
 
 ### Layer 3: Causal Reasoning
 
@@ -171,6 +171,11 @@ The primary failure mode is the **variable alignment problem** in Layer 1 (C-JEP
 
 This is evidenced by the gap between standalone Granger/NOTEARS (operating on true variables) and the full pipeline (operating on slot-extracted variables). For example, on the fork graph: Granger SHD=1 vs. Pipeline SHD=16.
 
+**v0.8.0 mitigations** (partial, not fully resolved):
+- Adaptive slot pruning: tracks per-slot utilization and filters edges to active slots only, reducing but not eliminating spurious edges.
+- Independence regularization: decorrelation loss on slot templates encourages diverse representations, but does not guarantee bijective alignment.
+- Temporal Granger warm init: exploits temporal asymmetry for better initial W, partially bypassing the slot alignment problem.
+
 In v0.6.0, this problem is partially circumvented by passing raw data directly to Layer 2, bypassing Layer 1. This improves structure learning metrics but undermines the end-to-end architecture claim.
 
 ## Limitations
@@ -193,11 +198,18 @@ In v0.6.0, this problem is partially circumvented by passing raw data directly t
 
 ```bash
 pip install -e ".[dev]"
-pytest tests/ -v          # 267 tests
+pytest tests/ -v          # 271 tests
 python -m hhcra.main      # Run toy benchmark suite
 ```
 
 ## Changelog
+
+### v0.8.0
+- Adaptive slot count: slot utilization tracking in SlotAttention + `get_active_slots()` pruning for automatic variable count detection. `symbolic_graph()` now accepts `active_slots` parameter.
+- Independence regularization: decorrelation loss on slot templates forces diverse slot-variable correspondence.
+- Hybrid temporal-NOTEARS warm initialization: temporal Granger regression (SHD 1-4) replaces cross-sectional NOTEARS for W initialization when temporal data is available.
+- Performance fix: adaptive iteration count in `_warm_init_notears` (data-proportional instead of hardcoded 30×100). Early stopping when DAG constraint satisfied.
+- 271 tests passing.
 
 ### v0.7.0
 - Replaced latent-space ABP counterfactual with variable-space SCM fitting.

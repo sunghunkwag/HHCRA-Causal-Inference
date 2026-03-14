@@ -82,18 +82,21 @@ class CausalGNN(nn.Module):
     def warm_init_from_data(self, latent: torch.Tensor,
                             raw_data: Optional[torch.Tensor] = None):
         """
-        v0.6.0: Initialize W from data using standalone NOTEARS solver.
+        v0.8.0: Initialize W from data, preferring temporal Granger signal.
 
-        When raw_data is provided, runs a fast standalone NOTEARS with
-        GOLEM-NV loss to get an initial structure, then injects the result
-        into the GNN's W matrix.
-
-        Without raw_data, falls back to correlation-based initialization.
+        Priority order:
+          1. Temporal Granger regression (raw_data 3D with T>=3) — fast, SHD 1-4
+          2. Standalone NOTEARS with GOLEM-NV loss (raw_data available)
+          3. Correlation-based initialization (latent only)
         """
         N = self.config.num_vars
 
         if raw_data is not None:
-            # _warm_init_notears needs gradients for its internal optimization
+            # v0.8.0: Try temporal Granger initialization first
+            if raw_data.dim() == 3 and raw_data.shape[1] >= 3:
+                if self._warm_init_temporal_granger(raw_data):
+                    return
+            # Fallback: _warm_init_notears
             self._warm_init_notears(raw_data)
             return
 
@@ -110,6 +113,60 @@ class CausalGNN(nn.Module):
             score = corr.abs()[:N, :N] * self.diag_mask
             w_init = (score - score.mean()) * 0.3
             self.W.data.copy_(w_init)
+
+    def _warm_init_temporal_granger(self, raw_data: torch.Tensor) -> bool:
+        """
+        v0.8.0: Initialize W using temporal Granger regression.
+
+        Temporal Granger achieves SHD 1-4 on benchmarks because it exploits
+        temporal asymmetry: causes precede effects. This injects that signal
+        into the GNN's W matrix for much better starting structure than
+        cross-sectional NOTEARS.
+
+        Returns True if successful, False to fall back to NOTEARS.
+        """
+        N = self.config.num_vars
+        B, T, N_raw = raw_data.shape
+        N_use = min(N, N_raw)
+
+        if T < 3 or B * (T - 1) < 10:
+            return False
+
+        try:
+            with torch.no_grad():
+                X_curr = raw_data[:, :-1, :N_use].reshape(-1, N_use)  # (B*(T-1), N)
+                X_next = raw_data[:, 1:, :N_use].reshape(-1, N_use)   # (B*(T-1), N)
+
+                # Granger regression: X_next = X_curr @ W_granger
+                XtX = X_curr.T @ X_curr + 1e-6 * torch.eye(N_use, device=raw_data.device)
+                XtY = X_curr.T @ X_next
+                W_granger = torch.linalg.solve(XtX, XtY)  # (N_use, N_use)
+
+                # W_granger[j,i] = j at t predicts i at t+1
+                # For GNN W[i,j] = j influences i: transpose
+                W_init_raw = W_granger.T  # (N_use, N_use)
+
+                # Zero diagonal (no self-loops)
+                W_init_raw = W_init_raw * (1.0 - torch.eye(N_use, device=raw_data.device))
+
+                # Convert to sigmoid space
+                w_new = torch.full((N, N), -3.0, device=self.W.device)
+                significant = (W_init_raw.abs() > 0.15)
+                for i in range(N_use):
+                    for j in range(N_use):
+                        if i == j:
+                            continue
+                        if significant[i, j]:
+                            strength = min(W_init_raw[i, j].abs().item(), 1.0)
+                            w_new[i, j] = 1.0 + strength * 2.0
+                        else:
+                            w_new[i, j] = -3.0
+
+                w_new = w_new * self.diag_mask
+                self.W.data.copy_(w_new)
+                return True
+        except Exception:
+            return False
 
     def _warm_init_notears(self, raw_data: torch.Tensor):
         """
@@ -149,10 +206,12 @@ class CausalGNN(nn.Module):
         rho = 1.0
         h_old = float('inf')
 
-        # Fast: fewer outer iterations, fewer inner steps
-        for outer in range(30):
+        # v0.8.0: Adaptive iteration count based on data size
+        max_outer = min(15, max(5, N_use * 3))
+        max_inner = min(50, max(20, n // 10))
+        for outer in range(max_outer):
             optimizer = torch.optim.Adam([W_nt], lr=0.005)
-            for _ in range(100):
+            for inner_step in range(max_inner):
                 optimizer.zero_grad()
                 Wm = W_nt * diag_mask_nt
                 residual = X_std - X_std @ Wm  # (n, N_use)
@@ -170,6 +229,10 @@ class CausalGNN(nn.Module):
                 Wm = W_nt * diag_mask_nt
                 M = Wm * Wm
                 h_new = (torch.trace(torch.matrix_exp(M)) - N_use).clamp(min=0).item()
+
+            # v0.8.0: Early stopping when DAG constraint is satisfied
+            if h_new < 1e-6:
+                break
 
             if h_new > 0.25 * h_old:
                 rho = min(rho * 10.0, 1e12)
@@ -909,19 +972,34 @@ class MechanismLayer(nn.Module):
 
         return structure_loss + 0.1 * mech_loss
 
-    def symbolic_graph(self) -> CausalGraphData:
-        """Convert continuous adjacency to symbolic graph for Layer 3."""
+    def symbolic_graph(self, active_slots=None) -> CausalGraphData:
+        """Convert continuous adjacency to symbolic graph for Layer 3.
+
+        Args:
+            active_slots: Optional tensor of active slot indices from Layer 1.
+                When provided, only edges between active slots are included,
+                reducing spurious edges from unused slots.
+        """
         self.gnn.prune_to_dag()
         with torch.no_grad():
             A = self.gnn.adjacency(hard=True).cpu().numpy()
             As = self.gnn.adjacency(hard=False).cpu().numpy()
         N = self.config.num_vars
+
+        # v0.8.0: Filter to active slots if provided
+        if active_slots is not None:
+            active_set = set(active_slots.cpu().tolist())
+        else:
+            active_set = set(range(N))
+
         edges = []
         for i in range(N):
             for j in range(N):
-                if A[i, j] > 0:
+                if A[i, j] > 0 and i in active_set and j in active_set:
                     edges.append((j, i, float(As[i, j])))
-        return CausalGraphData(list(range(N)), edges, A)
+        graph = CausalGraphData(list(range(N)), edges, A)
+        graph.num_active_vars = len(active_set)
+        return graph
 
     def handle_feedback(self, feedback: dict):
         """Handle feedback from Layer 3."""
