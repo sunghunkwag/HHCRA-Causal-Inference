@@ -199,6 +199,11 @@ python -m hhcra.main      # Run toy benchmark suite
 
 ## Changelog
 
+### v0.7.0
+- Replaced latent-space ABP counterfactual with variable-space SCM fitting.
+- New counterfactual pipeline: partial-correlation skeleton discovery, variance-based edge orientation, OLS coefficient estimation, ABP/total-effect ensemble.
+- Counterfactual accuracy improved from 1/5 to **5/5 graphs** beating the intervention-only baseline.
+
 ### v0.6.0
 - Added standard benchmark graphs (Asia, Sachs, Alarm, Insurance, Erdos-Renyi).
 - Added baseline runners for PC, Granger, NOTEARS, Random, Empty.
