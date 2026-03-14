@@ -41,11 +41,11 @@ so SHD includes penalty for extra nodes.
 
 | Graph | Vars | Edges | SHD | TPR | FDR |
 |-------|------|-------|-----|-----|-----|
-| chain | 4 | 3 | 14 | 0.000 | 1.000 |
-| fork | 3 | 2 | 16 | 0.000 | 1.000 |
-| collider | 3 | 2 | 12 | 0.000 | 1.000 |
-| diamond | 4 | 4 | 12 | 0.250 | 0.500 |
-| complex | 8 | 9 | 13 | 0.111 | 0.833 |
+| chain | 4 | 3 | 4 | 0.000 | 0.000 |
+| fork | 3 | 2 | 6 | 0.000 | 0.000 |
+| collider | 3 | 2 | 3 | 0.000 | 0.000 |
+| diamond | 4 | 4 | 5 | 0.250 | 0.000 |
+| complex | 8 | 9 | 10 | 0.000 | 1.000 |
 
 ## Target Verification
 

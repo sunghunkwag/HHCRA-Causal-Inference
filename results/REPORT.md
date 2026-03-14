@@ -2,7 +2,7 @@
 
 ## Executive Summary
 
-HHCRA's temporal Granger-causal structure learning achieves SHD < 5 on 4/5 graphs. Cross-sectional NOTEARS correctly recovers causal skeletons but reverses edge directions due to Markov equivalence in linear Gaussian data. Through the full pipeline (C-JEPA perception -> GNN structure learning), SHD values are higher (mean=13.4) due to the variable alignment bottleneck in C-JEPA's slot attention. Interventional predictions beat the naive correlation baseline on 5/5 graphs. Counterfactual predictions (ABP procedure) beat the intervention-only baseline on 1/5 graphs. NOTEARS beats the PC algorithm on 2/5 benchmark graphs.
+HHCRA's temporal Granger-causal structure learning achieves SHD < 5 on 4/5 graphs. Cross-sectional NOTEARS correctly recovers causal skeletons but reverses edge directions due to Markov equivalence in linear Gaussian data. Through the full pipeline (C-JEPA perception -> GNN structure learning), SHD values are higher (mean=13.4) due to the variable alignment bottleneck in C-JEPA's slot attention. Interventional predictions beat the naive correlation baseline on 5/5 graphs. Counterfactual predictions beat the intervention-only baseline on **5/5 graphs** (v0.7.0: variable-space SCM fitting with ABP/total-effect ensemble). NOTEARS beats the PC algorithm on 2/5 benchmark graphs.
 
 ## 1. Structure Learning Results (Phase A)
 
@@ -52,13 +52,19 @@ HHCRA beats Naive on 5/5 graphs.
 
 | Graph | HHCRA CF MSE | Int-Only MSE | CF beats Int-Only |
 |-------|-------------|-------------|-------------------|
-| chain | 1.338807 | 0.006998 | No |
-| fork | 1.484083 | 0.005751 | No |
-| collider | 1.055567 | 1.202451 | Yes |
-| diamond | 1.158430 | 0.029942 | No |
-| complex | 0.671305 | 0.112186 | No |
+| chain | 0.000075 | 0.006998 | Yes |
+| fork | 0.000199 | 0.005751 | Yes |
+| collider | 0.000200 | 1.202451 | Yes |
+| diamond | 0.007256 | 0.029942 | Yes |
+| complex | 0.068552 | 0.112186 | Yes |
 
-HHCRA CF beats Int-Only on 1/5 graphs.
+HHCRA CF beats Int-Only on **5/5 graphs**.
+
+v0.7.0 improvement: replaced latent-space ABP (which operated in a
+mismatched representation) with variable-space SCM fitting using
+partial-correlation skeleton + variance-based orientation + OLS
+coefficients. An ensemble of ABP and total-effect estimation
+handles Markov-equivalent edge directions robustly.
 
 ## 4. Comparison with Classical Methods (Phase D)
 

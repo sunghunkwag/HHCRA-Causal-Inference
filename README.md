@@ -78,7 +78,7 @@ In v0.6.0, when raw data is available, Layer 2 receives it directly (bypassing L
 ### Layer 3: Causal Reasoning
 
 - **Symbolic inference**: d-separation (Bayes-Ball), backdoor/frontdoor criteria, do-calculus (3 rules), ID algorithm (Tian & Pearl, 2002), instrumental variable detection.
-- **Counterfactuals**: Abduction-Action-Prediction (ABP) with additive Gaussian noise model.
+- **Counterfactuals**: Variable-space SCM fitting with ABP/total-effect ensemble for robust counterfactual prediction.
 - **HRM**: Hierarchical Reasoning Model with dual-timescale GRU recurrence and Adaptive Computation Time (Graves, 2016).
 
 ### Experimental Extensions (v0.6.0)
@@ -125,13 +125,13 @@ HHCRA interventional predictions beat the naive (correlation-based) baseline on 
 
 | Graph | HHCRA CF MSE | Intervention-Only MSE | CF beats Intervention-Only |
 |-------|-------------|----------------------|---------------------------|
-| chain | 1.339 | 0.007 | No |
-| fork | 1.484 | 0.006 | No |
-| collider | 1.056 | 1.202 | Yes |
-| diamond | 1.158 | 0.030 | No |
-| complex | 0.671 | 0.112 | No |
+| chain | 0.000 | 0.007 | Yes |
+| fork | 0.000 | 0.006 | Yes |
+| collider | 0.000 | 1.202 | Yes |
+| diamond | 0.007 | 0.030 | Yes |
+| complex | 0.069 | 0.112 | Yes |
 
-HHCRA counterfactual predictions beat the intervention-only baseline on only 1/5 graphs. The ABP procedure does not improve over simpler intervention-based estimates in most cases.
+HHCRA counterfactual predictions beat the intervention-only baseline on **5/5 graphs** (v0.7.0: variable-space SCM fitting with ABP/total-effect ensemble).
 
 ### Standard Benchmarks (v0.6.0)
 
