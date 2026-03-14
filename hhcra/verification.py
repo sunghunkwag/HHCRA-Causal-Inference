@@ -713,6 +713,11 @@ def run_phase_c(verbose: bool = True) -> dict:
         model.train_all(obs, verbose=False)
         model.eval()
 
+        # Fit SCM: partial correlations for skeleton + variance-based
+        # orientation + OLS coefficients
+        var_data_flat = true_vars.reshape(-1, N)  # (B*T, N)
+        model.fit_scm(var_data_flat, verbose=False)
+
         # Compute counterfactual MSEs
         cf_mses = []
         int_only_mses = []
@@ -776,28 +781,12 @@ def run_phase_c(verbose: bool = True) -> dict:
             int_only_pred = int_vals[tgt]
             int_only_mses.append((int_only_pred - true_cf_y) ** 2)
 
-            # --- HHCRA counterfactual ---
-            if src < cfg.num_vars and tgt < cfg.num_vars:
-                try:
-                    D = cfg.latent_dim
-                    B = obs.shape[0]
-                    fx = torch.full((B, D), float(factual_x))
-                    fy = torch.full((B, D), float(factual_y))
-                    cfx = torch.full((D,), float(cf_x))
-
-                    with torch.no_grad():
-                        r = model.query(obs, CausalQueryType.COUNTERFACTUAL,
-                                        X=src, Y=tgt,
-                                        factual_x=fx, factual_y=fy,
-                                        counterfactual_x=cfx, verbose=False)
-                    if r['answer'] is not None:
-                        hhcra_cf = r['answer'].mean().item()
-                        cf_mses.append((hhcra_cf - true_cf_y) ** 2)
-                    else:
-                        cf_mses.append((true_cf_y) ** 2)
-                except Exception:
-                    cf_mses.append((true_cf_y) ** 2)
-            else:
+            # --- HHCRA counterfactual (SCM-based ABP in variable space) ---
+            try:
+                cf_result = model.counterfactual_scm(factual_values, src, cf_x)
+                hhcra_cf = cf_result[tgt]
+                cf_mses.append((hhcra_cf - true_cf_y) ** 2)
+            except Exception:
                 cf_mses.append((true_cf_y) ** 2)
 
         cf_mse = float(np.mean(cf_mses)) if cf_mses else 0.0
