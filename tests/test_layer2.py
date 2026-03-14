@@ -174,3 +174,38 @@ class TestMechanismLayer:
         """After training, the graph should be a valid DAG."""
         graph = trained_model.layer2.symbolic_graph()
         assert graph.is_dag()
+
+    def test_temporal_granger_warm_init(self, config):
+        """v0.8.0: Temporal Granger init should set W from temporal signal."""
+        gnn = CausalGNN(config)
+        raw_data = torch.randn(8, 10, config.num_vars)
+        w_before = gnn.W.data.clone()
+        gnn.warm_init_from_data(
+            torch.randn(8, 10, config.num_vars, config.latent_dim),
+            raw_data=raw_data)
+        w_after = gnn.W.data
+        assert not torch.equal(w_before, w_after), \
+            "W should change after temporal Granger init"
+
+    def test_adaptive_notears_iterations(self, config):
+        """v0.8.0: Adaptive iterations should not timeout on small data."""
+        import time
+        gnn = CausalGNN(config)
+        raw_data = torch.randn(4, 8, config.num_vars)
+        start = time.time()
+        gnn._warm_init_notears(raw_data)
+        elapsed = time.time() - start
+        assert elapsed < 30.0, f"_warm_init_notears took {elapsed:.1f}s (should be <30s)"
+
+    def test_symbolic_graph_with_active_slots(self, config):
+        """v0.8.0: symbolic_graph should filter by active slots."""
+        layer = MechanismLayer(config)
+        latent = torch.randn(4, 8, config.num_vars, config.latent_dim)
+        layer(latent)
+        # Only allow slots 0, 1, 2
+        active = torch.tensor([0, 1, 2])
+        graph = layer.symbolic_graph(active_slots=active)
+        # All edges should be between active slots
+        for p, c, w in graph.edges:
+            assert p in {0, 1, 2} and c in {0, 1, 2}, \
+                f"Edge ({p},{c}) involves inactive slot"

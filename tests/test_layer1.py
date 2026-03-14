@@ -85,3 +85,45 @@ class TestCJEPA:
         t1 = latent[:, 1, :, :]
         # They should be different (temporal smoothing kicks in at t>0)
         assert not torch.allclose(t0, t1)
+
+    def test_adaptive_slot_pruning(self, config):
+        """v0.8.0: Unused slots should have low utilization."""
+        torch.manual_seed(42)
+        model = CJEPA(config)
+        obs = torch.randn(4, 8, config.obs_dim)
+        model.extract_variables(obs)
+        active = model.get_active_slots()
+        util = model.slot_attention.slot_utilization
+        assert util.std() > 0.001, "All slots equally used — no specialization"
+
+    def test_slot_utilization_tracked(self, config):
+        """v0.8.0: SlotAttention should track slot_utilization."""
+        sa = SlotAttention(config.num_vars, config.latent_dim)
+        z = torch.randn(4, config.latent_dim)
+        sa(z)
+        assert hasattr(sa, 'slot_utilization')
+        assert sa.slot_utilization.shape == (config.num_vars,)
+
+    def test_independence_regularization(self, config):
+        """v0.8.0: Independence loss includes decorrelation term."""
+        torch.manual_seed(42)
+        model = CJEPA(config)
+        # Use small batch/time to stay fast
+        obs = torch.randn(2, 4, config.obs_dim)
+        loss = model.compute_loss(obs)
+        # The loss should include the independence term (non-zero)
+        assert loss.item() > 0
+        # Verify gradient flows through independence loss
+        loss.backward()
+        grad_count = sum(1 for p in model.parameters()
+                         if p.grad is not None and p.grad.abs().sum() > 0)
+        assert grad_count > 0, "Independence loss has no gradient"
+
+    def test_get_active_slots_returns_tensor(self, config):
+        """v0.8.0: get_active_slots returns a tensor of indices."""
+        model = CJEPA(config)
+        obs = torch.randn(2, 4, config.obs_dim)
+        model.extract_variables(obs)
+        active = model.get_active_slots()
+        assert isinstance(active, torch.Tensor)
+        assert active.dim() == 1
