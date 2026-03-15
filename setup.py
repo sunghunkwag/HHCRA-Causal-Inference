@@ -1,17 +1,20 @@
 from setuptools import setup, find_packages
 
 setup(
-    name="hhcra",
-    version="0.8.0",
-    description="Hierarchical Hybrid Causal Reasoning Architecture",
+    name="coda-causal",
+    version="1.0.0",
+    description="CODA: Cross-validated Ordering for DAG Alignment",
+    long_description=open("README.md").read(),
+    long_description_content_type="text/markdown",
+    author="Sunghun Kwag",
     packages=find_packages(),
-    python_requires=">=3.8",
+    python_requires=">=3.9",
     install_requires=[
-        "torch>=2.0.0",
         "numpy>=1.24.0",
         "scipy>=1.10.0",
+        "scikit-learn>=1.2.0",
     ],
     extras_require={
-        "dev": ["pytest>=7.0.0"],
+        "test": ["pytest>=7.0.0"],
     },
 )
