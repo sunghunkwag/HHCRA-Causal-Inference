@@ -2,37 +2,58 @@
 
 A varsortability-aware causal discovery framework with honest benchmarking.
 
-## What This Is
+## Status: Research in Progress
 
-CODA is a causal structure learning algorithm that addresses three known failure modes in the NOTEARS/GOLEM lineage:
+**CODA does not beat standard causal discovery methods (PC, GES, LiNGAM) on current benchmarks.** It beats the trivial sortnregress baseline, but that is not a meaningful contribution — sortnregress exists to diagnose benchmark artifacts, not as a real competitor.
 
-1. **Fixed regression thresholds** → cross-validated parent selection (LassoCV + adaptive noise floor)
-2. **Variance-based ordering exploit** ([Reisach et al., 2021](https://arxiv.org/abs/2102.13647)) → conditional-variance ordering that does not exploit varsortability
-3. **Single BIC ordering** → ensemble of candidate orderings scored on held-out data
+This repository is published for transparency. The honest results are below.
 
-## What This Is Not
+## Benchmark Results (SHD, lower = better)
 
-- This is **not** a neural method. It is classical statistics (OLS + Lasso + BIC).
-- It operates on **linear additive noise models** only. For nonlinear causal discovery, see [SCORE](https://arxiv.org/abs/2106.12801), [DiffAN](https://arxiv.org/abs/2210.06201), or [NoGAM](https://arxiv.org/abs/2304.03265).
-- It has been tested on **synthetic data** and **synthetic-from-real-DAG data** (Sachs, Asia). It has **not** been validated on the original Sachs flow cytometry measurements.
-- The current SHD numbers reflect performance on linear Gaussian / non-Gaussian SEMs. Real-world causal discovery remains an open problem.
+All experiments on synthetic linear SEM data. Varsortability and R²-sortability reported for every dataset.
 
-## Honest Benchmarking
+| Dataset | V-sort | empty | SNR | PC | GES | LiNGAM | CODA |
+|---------|--------|-------|-----|----|----|--------|------|
+| Asia raw (d=8, 8 edges) | 1.000 | 8 | 5 | **1** | **0** | **0** | 6 |
+| Asia standardized | 0.750 | 8 | 14 | **1** | **0** | 7 | 6 |
+| Asia low-weight | 0.750 | 8 | 11 | **0** | **0** | 8 | 5 |
+| Sachs synthetic (d=11, 17 edges) | 0.824 | 17 | 27 | **10** | 15 | **1** | 12 |
+| Sachs standardized | 0.706 | 17 | 29 | **10** | 15 | 12 | 12 |
+| ER-2 d=20 raw (34 edges) | 0.941 | 34 | 57 | **16** | 20 | **15** | 53 |
+| ER-2 d=20 standardized | 0.529 | 34 | 125 | **16** | 20 | 64 | 53 |
 
-Every experiment reports:
-- **Varsortability** and **R²-sortability** of the test data ([Reisach et al., 2021/2023](https://arxiv.org/abs/2102.13647))
-- **sortnregress** baseline (sort by variance + Lasso — the trivial method that matches NOTEARS on standard benchmarks)
-- **R²-sortnregress** baseline (scale-invariant variant)
-- **Empty graph** baseline (SHD = number of true edges — the floor any method must beat)
+**Winner by dataset:** PC/GES/LiNGAM win every benchmark. CODA is competitive with LiNGAM only on standardized data.
 
-If CODA does not beat sortnregress on a given dataset, the table says so.
+## What CODA Does
+
+Three-stage ordering-based structure learning:
+1. Generate candidate topological orderings (conditional variance, random restarts, variance sort)
+2. For each ordering, fit parents via cross-validated Lasso (LassoCV + adaptive noise floor)
+3. Score each DAG on held-out data using BIC; return best
+
+## Why It Doesn't Work (Yet)
+
+1. **PC uses conditional independence tests** which directly encode the Markov property. CODA's ordering + regression approach is less principled.
+2. **GES has provable consistency** for Gaussian models with BIC score. CODA's greedy ordering search has no such guarantee.
+3. **LiNGAM exploits non-Gaussianity** for full identifiability. CODA doesn't use distribution shape information.
+4. **CODA's ordering search is O(d³n)** per candidate, making it slower than PC (O(d^q) for sparse graphs) without being more accurate.
+
+## What Would Make This Publishable
+
+For arXiv-level contribution, CODA would need one of:
+
+1. **Theoretical identifiability result**: Prove that conditional-variance ordering recovers the true topological order under specific conditions (e.g., additive noise with bounded signal-to-noise ratio).
+2. **Hybrid PC-CODA**: Use CODA's ordering as initialization for PC's constraint-based refinement. If this is faster than PC alone with equal accuracy, that's a practical contribution.
+3. **Real-data advantage**: Demonstrate superior performance on real (non-synthetic) data where PC/GES assumptions are violated (nonlinear, non-Gaussian, latent confounders).
+4. **Scalability**: Show CODA scales better than PC/GES for d > 100 (unlikely with current O(d³n) complexity).
 
 ## Installation
 
 ```bash
 pip install -e .
-# or
-pip install numpy scipy scikit-learn
+# Requires: numpy, scipy, scikit-learn
+# Optional: causal-learn (for PC/GES/LiNGAM baselines)
+pip install causal-learn
 ```
 
 ## Quick Start
@@ -44,29 +65,32 @@ from coda.data import generate_linear_sem_data, ASIA_TRUE_DAG
 # Generate data
 X, W = generate_linear_sem_data(ASIA_TRUE_DAG, n=2000, seed=42)
 
-# Check varsortability (diagnostic)
+# Diagnostic: check if benchmark is trivially solvable
 print(f"Varsortability: {varsortability(X, ASIA_TRUE_DAG):.3f}")
 
 # Run CODA
 result = coda_discover(X, n_restarts=10, seed=42)
 print(f"SHD: {shd(result['adj'], ASIA_TRUE_DAG)}")
-print(f"Strategy: {result['strategy']}")
+
+# Compare with PC (the method you should probably use instead)
+from coda.baselines import run_pc
+adj_pc = run_pc(X)
+print(f"PC SHD: {shd(adj_pc, ASIA_TRUE_DAG)}")
 ```
 
 ## Pearl's Causal Hierarchy
 
-CODA includes inference for all three rungs:
+CODA includes inference for all three rungs of Pearl's ladder:
 
 ```python
 from coda import fit_linear_scm, interventional_mean, counterfactual
 
-# Fit SCM from discovered DAG
 scm = fit_linear_scm(X, result['adj'])
 
-# Rung 2: Interventional — E[X5 | do(X0 = 3)]
+# Rung 2: E[X5 | do(X0 = 3)]
 mean = interventional_mean(scm, target=5, intervention_node=0, intervention_value=3.0)
 
-# Rung 3: Counterfactual — "What would X2 be if X0 had been 5?"
+# Rung 3: Counterfactual
 cf = counterfactual(scm, factual_values=X[0], intervention_node=0, counterfactual_value=5.0)
 ```
 
@@ -76,50 +100,39 @@ cf = counterfactual(scm, factual_values=X[0], intervention_node=0, counterfactua
 coda/
 ├── __init__.py        # Public API
 ├── discovery.py       # CODA algorithm + sortnregress baselines
+├── baselines.py       # PC, GES, LiNGAM wrappers (causal-learn)
 ├── scm.py             # Linear SCM fitting
 ├── inference.py       # Interventional + counterfactual queries
 ├── metrics.py         # SHD, F1, varsortability, R²-sortability
 └── data.py            # DAG generators, Sachs/Asia ground truth
-tests/
-├── conftest.py        # Shared fixtures
-├── test_metrics.py    # Metric tests
-├── test_data.py       # Data generation tests
-├── test_discovery.py  # Discovery algorithm tests
-├── test_scm.py        # SCM fitting tests
-└── test_inference.py  # Causal inference tests
+tests/                 # 80+ tests
 scripts/
 └── run_benchmark.py   # Full benchmark with honest reporting
 ```
 
-## Running Tests
+## Running Tests & Benchmarks
 
 ```bash
 pytest tests/ -v
-```
-
-## Running Benchmarks
-
-```bash
 python scripts/run_benchmark.py
 ```
 
 ## Known Limitations
 
-1. **Linear models only.** The entire framework assumes X_j = Σ w_ij X_i + e_j. Nonlinear causal mechanisms are not handled.
-2. **Synthetic benchmarks.** While the Sachs DAG structure is real, the data is synthetic. Real flow cytometry data may behave differently.
-3. **Identifiability.** Linear Gaussian SEMs are identifiable only up to Markov equivalence classes. CODA picks a single DAG via BIC, which may not be the true one even with infinite data. Non-Gaussian noise improves identifiability (LiNGAM theory).
-4. **Scale.** Tested up to d=20 nodes. The conditional-variance ordering step is O(d³n), limiting scalability.
-5. **No latent variables.** Assumes causal sufficiency (all common causes observed).
+1. **Linear models only** — no nonlinear mechanisms
+2. **Synthetic benchmarks only** — not validated on real data
+3. **Loses to PC/GES/LiNGAM** — the primary finding of this benchmark
+4. **O(d³n) complexity** — not scalable beyond ~50 nodes
+5. **No latent variables** — assumes causal sufficiency
+6. **Identifiability** — linear Gaussian SEMs yield only equivalence classes
 
 ## References
 
-- Reisach, Seiler, Weichwald. "Beware of the Simulated DAG! Causal Discovery Benchmarks May Be Easy To Game." NeurIPS 2021.
-- Reisach et al. "Scale-Free Structure Learning with Regularized Regression." NeurIPS 2023.
-- Zheng et al. "DAGs with NO TEARS." NeurIPS 2018.
-- Ng, Ghassami, Zhang. "On the Role of Sparsity and DAG Constraints for Learning Linear DAGs." NeurIPS 2020 (GOLEM).
-- Rolland et al. "Score Matching Enables Causal Discovery of Nonlinear Additive Noise Models." ICML 2022 (SCORE).
+- Reisach, Seiler, Weichwald. "Beware of the Simulated DAG!" NeurIPS 2021.
+- Spirtes, Glymour, Scheines. "Causation, Prediction, and Search." MIT Press, 2000.
+- Chickering. "Optimal Structure Identification with GES." JMLR, 2002.
+- Shimizu et al. "A Linear Non-Gaussian Acyclic Model for Causal Discovery." JMLR, 2006.
 - Pearl. "Causality: Models, Reasoning, and Inference." Cambridge, 2009.
-- Sachs et al. "Causal Protein-Signaling Networks Derived from Multiparameter Single-Cell Data." Science 2005.
 
 ## License
 
