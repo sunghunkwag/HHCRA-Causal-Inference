@@ -49,9 +49,9 @@ from hhcra.real_benchmarks import (
     run_layer1_ablation,
     # Utilities
     GESBaseline,
-    # v0.10.0: KKCE
-    run_kkce,
-    run_scrd_baseline,
+    # v0.10.0: CAD
+    run_cad,
+    run_vcd_baseline,
 )
 from hhcra.benchmarks import (
     make_chain_benchmark,
@@ -568,10 +568,10 @@ class TestComprehensiveResults:
 
 
 # ============================================================================
-# v0.10.0: KKCE (Kuramoto-Klein Causal Emergence) Tests
+# v0.10.0: CAD (Coupling-Adjusted Discovery) Tests
 # ============================================================================
 
-def _kkce_true_adj(graph):
+def _cad_true_adj(graph):
     """True adjacency with parent→child convention (adj[parent,child]=1)."""
     N = graph.num_vars
     adj = np.zeros((N, N))
@@ -580,63 +580,63 @@ def _kkce_true_adj(graph):
     return adj
 
 
-class TestKKCE:
+class TestCAD:
     """
-    Validate that KKCE beats SCRD and all baselines.
+    Validate that CAD beats VCD and all baselines.
 
-    KKCE combines:
-      1. Kuramoto phase synchronization for causal ordering
-      2. Klein bottle topological edge filtering
+    CAD combines:
+      1. coupling-adjusted ordering for causal ordering
+      2. partial correlation topological edge filtering
       3. Dissipative structure emergence for DAG refinement
 
-    Note: KKCE uses adj[parent,child]=1 convention (standard in causal
+    Note: CAD uses adj[parent,child]=1 convention (standard in causal
     inference), while the v0.9.0 baselines use adj[child,parent]=1.
-    We use _kkce_true_adj for consistent comparison.
+    We use _cad_true_adj for consistent comparison.
     """
 
     def test_kkce_beats_scrd_on_sachs(self):
-        """KKCE should significantly beat SCRD on Sachs (hub-heavy graph)."""
+        """CAD should significantly beat VCD on Sachs (hub-heavy graph)."""
         graph = make_sachs_benchmark()
-        true_adj = _kkce_true_adj(graph)
+        true_adj = _cad_true_adj(graph)
         X = generate_linear_sem_data(graph, n_samples=2000, seed=42)
-        m_kkce = run_kkce(X, true_adj)
-        m_scrd = run_scrd_baseline(X, true_adj)
+        m_kkce = run_cad(X, true_adj)
+        m_scrd = run_vcd_baseline(X, true_adj)
         assert m_kkce.shd < m_scrd.shd, (
-            f"KKCE SHD={m_kkce.shd} should beat SCRD SHD={m_scrd.shd} on Sachs")
+            f"CAD SHD={m_kkce.shd} should beat VCD SHD={m_scrd.shd} on Sachs")
 
     def test_kkce_matches_scrd_on_asia(self):
-        """KKCE should match SCRD on Asia (sparse graph)."""
+        """CAD should match VCD on Asia (sparse graph)."""
         graph = make_asia_benchmark()
-        true_adj = _kkce_true_adj(graph)
+        true_adj = _cad_true_adj(graph)
         X = generate_linear_sem_data(graph, n_samples=2000, seed=42)
-        m_kkce = run_kkce(X, true_adj)
-        m_scrd = run_scrd_baseline(X, true_adj)
+        m_kkce = run_cad(X, true_adj)
+        m_scrd = run_vcd_baseline(X, true_adj)
         assert m_kkce.shd <= m_scrd.shd + 1, (
-            f"KKCE SHD={m_kkce.shd} should match SCRD SHD={m_scrd.shd} on Asia")
+            f"CAD SHD={m_kkce.shd} should match VCD SHD={m_scrd.shd} on Asia")
 
     def test_kkce_sachs_high_f1(self):
-        """KKCE should achieve F1 > 0.65 on Sachs."""
+        """CAD should achieve F1 > 0.65 on Sachs."""
         graph = make_sachs_benchmark()
-        true_adj = _kkce_true_adj(graph)
+        true_adj = _cad_true_adj(graph)
         X = generate_linear_sem_data(graph, n_samples=2000, seed=42)
-        m = run_kkce(X, true_adj)
-        assert m.f1 > 0.65, f"KKCE F1={m.f1:.3f} should be > 0.65 on Sachs"
+        m = run_cad(X, true_adj)
+        assert m.f1 > 0.65, f"CAD F1={m.f1:.3f} should be > 0.65 on Sachs"
 
     def test_kkce_asia_low_shd(self):
-        """KKCE should achieve SHD <= 5 on Asia."""
+        """CAD should achieve SHD <= 5 on Asia."""
         graph = make_asia_benchmark()
-        true_adj = _kkce_true_adj(graph)
+        true_adj = _cad_true_adj(graph)
         X = generate_linear_sem_data(graph, n_samples=2000, seed=42)
-        m = run_kkce(X, true_adj)
-        assert m.shd <= 5, f"KKCE SHD={m.shd} should be <= 5 on Asia"
+        m = run_cad(X, true_adj)
+        assert m.shd <= 5, f"CAD SHD={m.shd} should be <= 5 on Asia"
 
     def test_kkce_kuramoto_critical_transition(self):
-        """The Kuramoto sweep should select β>0 for Sachs (coupling helps)."""
-        from hhcra.real_benchmarks import KuramotoKleinEmergence
+        """The coupling sweep should select β>0 for Sachs (coupling helps)."""
+        from hhcra.real_benchmarks import CouplingAdjustedDiscovery
 
         graph = make_sachs_benchmark()
         X = generate_linear_sem_data(graph, n_samples=2000, seed=42)
-        kkce = KuramotoKleinEmergence()
+        kkce = CouplingAdjustedDiscovery()
         X_c = X - X.mean(axis=0)
 
         bics = {}
@@ -650,20 +650,20 @@ class TestKKCE:
             f"than BIC at β=0.0 ({bics[0.0]:.1f})")
 
     def test_kkce_comprehensive_comparison(self):
-        """Print comprehensive KKCE comparison table."""
+        """Print comprehensive CAD comparison table."""
         print("\n\n" + "=" * 90)
-        print("  KKCE COMPREHENSIVE BENCHMARK — v0.10.0")
+        print("  CAD COMPREHENSIVE BENCHMARK — v0.10.0")
         print("=" * 90)
 
         for name, make_fn in [('Asia', make_asia_benchmark),
                                ('Sachs', make_sachs_benchmark)]:
             graph = make_fn()
-            true_adj = _kkce_true_adj(graph)
+            true_adj = _cad_true_adj(graph)
             X = generate_linear_sem_data(graph, n_samples=2000, seed=42)
 
             methods = {}
-            methods['KKCE'] = run_kkce(X, true_adj)
-            methods['SCRD'] = run_scrd_baseline(X, true_adj)
+            methods['CAD'] = run_cad(X, true_adj)
+            methods['VCD'] = run_vcd_baseline(X, true_adj)
 
             print(f"\n  {name.upper()} ({graph.num_vars} vars, "
                   f"{len(graph.edges)} edges)")

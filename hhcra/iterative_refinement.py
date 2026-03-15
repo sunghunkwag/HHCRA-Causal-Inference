@@ -1,12 +1,12 @@
 """
-Autocatalytic Causal Network: The three architectures catalyze each other.
+Iterative Refinement Loop: The three architectures catalyze each other.
 
-Inspired by the origin of life: autocatalytic sets are collections of
+Inspired by the iterative refinement: iterative_refinement sets are collections of
 molecules where each molecule's formation is catalyzed by another member
 of the set. No single molecule can exist alone -- the SET is the unit
 of organization. Life emerged from this self-reinforcing loop.
 
-Here, the three HHCRA architectures form an autocatalytic loop:
+Here, the three HHCRA architectures form an iterative_refinement loop:
 
     GNN (structure) → Liquid Net (dynamics) → Symbolic Engine (rules)
          ↑                                          |
@@ -17,14 +17,14 @@ Each component produces something the others need:
 - Liquid Net produces trajectories → Symbolic Engine needs trajectories to discover rules
 - Symbolic Engine discovers rules → GNN needs rules to constrain search space
 
-The LOOP creates emergent behavior: after multiple cycles, the system
+The LOOP creates convergent behavior: after multiple cycles, the system
 converges to a fixed point where structure, dynamics, and rules are
 mutually consistent. This fixed point contains more information than
-any single component could discover alone -- this is EMERGENCE.
+any single component could discover alone -- this is CONVERGENCE.
 
 Mathematical formulation:
     Let S = (W, θ_liquid, R) be the system state (graph, ODE params, rules)
-    The autocatalytic operator Φ maps:
+    The iterative_refinement operator Φ maps:
         Φ(S_n) = S_{n+1}
     where each component of S_{n+1} depends on all components of S_n.
     Convergence: ||S_{n+1} - S_n|| < ε implies fixed point reached.
@@ -43,17 +43,17 @@ from hhcra.layer1_cjepa import CJEPA
 from hhcra.layer2_mechanism import CausalGNN, LiquidNeuralNet, MechanismLayer
 from hhcra.layer3_reasoning import NeuroSymbolicEngine, ReasoningLayer
 from hhcra.liquid_causal_graph import LiquidCausalGraph
-from hhcra.symbolic_genesis import SymbolicGenesisEngine, SymbolicRule
+from hhcra.invariant_finder import TrajectoryInvariantFinder, InvariantRule
 
 
-class AutocatalyticCausalNet(nn.Module):
+class IterativeRefinementNet(nn.Module):
     """
-    The Autocatalytic Causal Network: self-catalytic loop over three architectures.
+    The Iterative Refinement Loop: iterative loop over three architectures.
 
     Each cycle:
     1. GNN refines structure using constraints from Symbolic Engine
     2. Liquid Causal Graph co-evolves states + structure
-    3. Symbolic Genesis discovers new rules from trajectories
+    3. Invariant Finder discovers new rules from trajectories
     4. New rules constrain GNN's next cycle
 
     Convergence detected when:
@@ -71,7 +71,7 @@ class AutocatalyticCausalNet(nn.Module):
         # Core components
         self.gnn = CausalGNN(config)
         self.liquid_graph = LiquidCausalGraph(config)
-        self.symbolic_genesis = SymbolicGenesisEngine(config, num_candidates=8)
+        self.invariant_finder = TrajectoryInvariantFinder(config, num_candidates=8)
         self.symbolic_engine = NeuroSymbolicEngine()
 
         # Cycle tracking
@@ -82,7 +82,7 @@ class AutocatalyticCausalNet(nn.Module):
         """
         Apply symbolic constraints to GNN's adjacency weights.
 
-        This is the key catalytic step: Symbolic Engine → GNN.
+        This is the key feedback step: Symbolic Engine → GNN.
         Discovered rules modify the search space for structure learning.
         """
         with torch.no_grad():
@@ -138,10 +138,10 @@ class AutocatalyticCausalNet(nn.Module):
 
         return CausalGraphData(nodes, edges, A_np)
 
-    def autocatalytic_cycle(self, latent: torch.Tensor,
+    def refinement_cycle(self, latent: torch.Tensor,
                             cycle_idx: int = 0) -> Dict:
         """
-        Execute one full autocatalytic cycle.
+        Execute one full iterative_refinement cycle.
 
         Args:
             latent: (B, T, N, D) latent representations from Layer 1
@@ -183,21 +183,21 @@ class AutocatalyticCausalNet(nn.Module):
                 (1 - blend_alpha) * self.gnn.W.data + blend_alpha * W_evolved
             )
 
-        # === PHASE 3: Symbolic Genesis — discover rules ===
+        # === PHASE 3: Invariant Finder — discover rules ===
         graph = self._symbolic_graph_from_weights(self.gnn.W)
 
         # Train invariant finder on new trajectories
-        self.symbolic_genesis.train_finder(
+        self.invariant_finder.train_finder(
             trajectories.detach(), lr=0.001, steps=10
         )
 
         # Discover rules from trajectories
-        new_rules = self.symbolic_genesis.discover_rules(
+        new_rules = self.invariant_finder.discover_rules(
             trajectories.detach(), graph
         )
 
-        # === PHASE 4: Apply constraints back to GNN (catalytic closure) ===
-        constraints = self.symbolic_genesis.get_graph_constraints()
+        # === PHASE 4: Apply constraints back to GNN (constraint feedback) ===
+        constraints = self.invariant_finder.get_graph_constraints()
         self._apply_constraints_to_gnn(constraints)
 
         # === Compute cycle metrics ===
@@ -210,7 +210,7 @@ class AutocatalyticCausalNet(nn.Module):
             'trajectories': trajectories,
             'graph': graph,
             'new_rules': new_rules,
-            'total_rules': len(self.symbolic_genesis.discovered_rules),
+            'total_rules': len(self.invariant_finder.discovered_rules),
             'constraints_applied': len(constraints),
             'structure_distance': structure_dist,
             'graph_change_rate': graph_change_rate,
@@ -226,7 +226,7 @@ class AutocatalyticCausalNet(nn.Module):
                               convergence_threshold: float = 0.05,
                               verbose: bool = True) -> Dict:
         """
-        Run autocatalytic cycles until the system reaches a fixed point.
+        Run iterative_refinement cycles until the system reaches a fixed point.
 
         Convergence = structure + rules + dynamics all stabilize.
 
@@ -241,11 +241,11 @@ class AutocatalyticCausalNet(nn.Module):
         """
         if verbose:
             print("=" * 60)
-            print("AUTOCATALYTIC CAUSAL NETWORK — Self-Catalytic Evolution")
+            print("AUTOCATALYTIC CAUSAL NETWORK — Iterative Evolution")
             print("=" * 60)
 
         for cycle in range(max_cycles):
-            result = self.autocatalytic_cycle(latent, cycle_idx=cycle)
+            result = self.refinement_cycle(latent, cycle_idx=cycle)
 
             if verbose:
                 novel = sum(1 for r in result['new_rules'] if r.is_novel)
@@ -272,7 +272,7 @@ class AutocatalyticCausalNet(nn.Module):
                 if struct_converged and dynamics_converged:
                     self.convergence_achieved = True
                     if verbose:
-                        print(f"\n  FIXED POINT REACHED at cycle {cycle + 1}")
+                        print(f"\n  CONVERGENCE REACHED at cycle {cycle + 1}")
                         print(f"  Structure stable: {struct_converged}")
                         print(f"  Rules stable: {rules_converged}")
                         print(f"  Dynamics stable: {dynamics_converged}")
@@ -285,9 +285,9 @@ class AutocatalyticCausalNet(nn.Module):
             'converged': self.convergence_achieved,
             'total_cycles': len(self.cycle_history),
             'final_graph': final_graph,
-            'all_rules': list(self.symbolic_genesis.discovered_rules),
+            'all_rules': list(self.invariant_finder.discovered_rules),
             'novel_rules': [
-                r for r in self.symbolic_genesis.discovered_rules if r.is_novel
+                r for r in self.invariant_finder.discovered_rules if r.is_novel
             ],
             'cycle_history': self.cycle_history,
             'graph_evolution': self.liquid_graph.get_graph_evolution(),
@@ -303,13 +303,13 @@ class AutocatalyticCausalNet(nn.Module):
         return final_result
 
     def summary(self) -> str:
-        """Human-readable summary of the autocatalytic system state."""
+        """Human-readable summary of the iterative_refinement system state."""
         lines = [
-            "Autocatalytic Causal Network Summary",
+            "Iterative Refinement Loop Summary",
             f"  Cycles completed: {len(self.cycle_history)}",
             f"  Fixed point reached: {self.convergence_achieved}",
             "",
-            self.symbolic_genesis.summary(),
+            self.invariant_finder.summary(),
         ]
 
         if self.cycle_history:

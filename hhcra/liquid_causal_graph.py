@@ -12,7 +12,7 @@ that a single fixed DAG underlies the data. In reality, causal structures change
 taking a drug alters the body's causal mechanisms, not just the variable values.
 
 Mathematical foundation:
-    - The (x, W) pair lives on a product manifold R^(N*D) x R^(N*N)
+    - The (x, W) pair lives on a product space R^(N*D) x R^(N*N)
     - The ODE integrator (RK4) operates on this joint space
     - DAG projection after each step ensures acyclicity is maintained
     - The graph dynamics network learns dW/dt as a function of (W, x, invariants)

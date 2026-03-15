@@ -860,12 +860,12 @@ def run_hhcra_integrated(
 
 
 # =============================================================================
-# v0.9.0: Spectral Causal Resonance Discovery (SCRD)
+# v0.9.0: Variance Cascade Discovery (VCD)
 # =============================================================================
 #
 # A completely novel causal discovery algorithm based on treating variables
-# as coupled harmonic oscillators. The causal graph is discovered by
-# analyzing the resonance patterns in the spectral decomposition of the
+# as variables in a precision matrix. The causal graph is discovered by
+# analyzing the patterns in the precision decomposition of the
 # data's precision matrix.
 #
 # This is FUNDAMENTALLY DIFFERENT from:
@@ -874,28 +874,28 @@ def run_hhcra_integrated(
 #   - NOTEARS: continuous optimization with DAG constraint
 #   - Granger: temporal regression (requires time series)
 #
-# SCRD uses a 4-phase resonance discovery process:
+# VCD uses a 4-phase discovery process:
 #   Phase 1: Node Spectral Characterization
-#   Phase 2: Resonance Coupling Evaluation
+#   Phase 2: Partial Correlation Analysis
 #   Phase 3: Topological Cascade Ordering
 #   Phase 4: DAG Emergence via Pathway Amplification
 # =============================================================================
 
-class SpectralCausalResonance:
+class VarianceCascadeDiscovery:
     """
-    Spectral Causal Resonance Discovery (SCRD).
+    Variance Cascade Discovery (VCD).
 
-    Treats each variable as a harmonic oscillator with intrinsic frequency
+    Treats each variable as a variable with conditional variance
     determined by its noise variance. Causal edges are coupling forces
-    between oscillators that create resonance patterns detectable in the
+    between variables that create patterns encoded in the
     precision matrix's spectral decomposition.
 
     Key insight: In a linear SEM X = (I-B)^{-1}ε, the precision matrix
     Ω = Σ^{-1} encodes:
-      - Diagonal Ω[i,i] = 1/Var(X_i|rest) = "resonance frequency" of node i
+      - Diagonal Ω[i,i] = 1/Var(X_i|rest) = "conditional precision" of node i
       - Off-diagonal Ω[i,j] = partial correlation × geometric mean of diag
-        = "coupling strength" between oscillators i and j
-      - Eigenvalues of Ω = "resonance modes" of the causal system
+        = "coupling strength" between variables i and j
+      - Eigenvalues of Ω = "spectral modes" of the causal system
     """
 
     def __init__(self, edge_threshold: float = 0.08, ordering_method: str = 'variance_cascade'):
@@ -927,7 +927,7 @@ class SpectralCausalResonance:
             omega = np.linalg.pinv(cov)
 
         # Node properties
-        # ω_i = Ω[i,i] = 1/Var(X_i | all others) = resonance frequency
+        # ω_i = Ω[i,i] = 1/Var(X_i | all others) = conditional precision
         # E_i = Var(X_i) = total energy
         # Q_i = E_i * ω_i = quality factor (signal-to-noise ratio)
         omega_diag = np.diag(omega)
@@ -939,9 +939,9 @@ class SpectralCausalResonance:
         self.node_quality = quality_factors
 
         # =====================================================
-        # Phase 2: Resonance Coupling Evaluation
+        # Phase 2: Partial Correlation Analysis
         # =====================================================
-        # Compute the "resonance coupling" between each pair of oscillators.
+        # Compute the "pairwise coupling" between each pair of variables.
         # This is the normalized off-diagonal precision: partial correlation.
         # But we go beyond: we decompose into RESONANCE MODES via eigenanalysis.
 
@@ -953,14 +953,14 @@ class SpectralCausalResonance:
                 if i != j:
                     partial_corr[i, j] = -omega[i, j] / (diag_sqrt[i] * diag_sqrt[j])
 
-        # Spectral decomposition: resonance modes
+        # Spectral decomposition: spectral modes
         eigenvalues, eigenvectors = np.linalg.eigh(omega)
         # Sort by eigenvalue (ascending: low freq = root modes first)
         idx = np.argsort(eigenvalues)
         eigenvalues = eigenvalues[idx]
         eigenvectors = eigenvectors[:, idx]
 
-        # Modal coupling: decompose edge strength into resonance mode contributions
+        # Modal coupling: decompose edge strength into spectral mode contributions
         # For each edge (i,j), compute which modes contribute to their coupling
         modal_coupling = np.zeros((d, d))
         for k in range(d):
@@ -970,7 +970,7 @@ class SpectralCausalResonance:
             modal_coupling += lam * np.outer(v, v)
         # modal_coupling is just omega reconstructed, but we use mode-selective filtering
 
-        # NOVEL: Mode-selective resonance detection
+        # NOVEL: Mode-selective edge detection
         # Low-eigenvalue modes = global structure (long-range causal chains)
         # High-eigenvalue modes = local structure (direct parent-child)
         # We weight high-eigenvalue modes MORE for edge detection
@@ -982,7 +982,7 @@ class SpectralCausalResonance:
             weight = mode_weights[k] ** 0.5  # Square root weighting
             weighted_coupling += weight * eigenvalues[k] * np.outer(v, v)
 
-        self.resonance_matrix = partial_corr
+        self.partial_corr_matrix = partial_corr
         self.modal_coupling = weighted_coupling
 
         # =====================================================
@@ -1066,7 +1066,7 @@ class SpectralCausalResonance:
         partial_corr: np.ndarray, d: int, n: int,
     ) -> np.ndarray:
         """
-        Phase 4: DAG emergence via sequential regression with resonance gating.
+        Phase 4: DAG emergence via sequential regression with partial correlation gating.
 
         Uses the causal ordering from Phase 3 to build the DAG via forward
         regression: for each variable in order, regress on ALL prior variables
@@ -1150,46 +1150,46 @@ class SpectralCausalResonance:
         return adj
 
 
-def run_scrd_baseline(X: np.ndarray, true_adj: np.ndarray,
+def run_vcd_baseline(X: np.ndarray, true_adj: np.ndarray,
                       edge_threshold: float = 0.08) -> CausalMetrics:
-    """Run Spectral Causal Resonance Discovery on cross-sectional data."""
+    """Run Variance Cascade Discovery on cross-sectional data."""
     t0 = time.time()
-    scrd = SpectralCausalResonance(edge_threshold=edge_threshold)
+    scrd = VarianceCascadeDiscovery(edge_threshold=edge_threshold)
     pred_adj = scrd.fit(X)
     elapsed = time.time() - t0
     return compute_full_metrics(pred_adj, true_adj, time_seconds=elapsed)
 
 
 # =============================================================================
-# v0.10.0: KKCE — Kuramoto-Klein Causal Emergence
+# v0.10.0: CAD — Coupling-Adjusted Discovery
 #
 # A fundamentally novel causal discovery algorithm that treats variables as
-# coupled nonlinear oscillators (Kuramoto Model) on a topological manifold
-# (Klein Bottle geometry), where the causal DAG emerges as a dissipative
-# structure (Complex Systems Theory) through phase synchronization dynamics.
+# precision matrix analysis with coupling-adjusted ordering
+# (partial correlation Bottle geometry), where the causal DAG emerges as a BIC-based
+# structure (Complex Systems Theory) through coupling dynamics.
 #
 # Mathematical foundations:
-#   1. Kuramoto Model: dθ_i/dt = ω_i + (K/d) Σ_j g_ij sin(θ_j - θ_i)
-#      — phase synchronization reveals causal hierarchy
-#   2. Klein Bottle Topology: non-orientable manifold structure where
+#   1. coupling adjustment: dθ_i/dt = ω_i + (K/d) Σ_j g_ij sin(θ_j - θ_i)
+#      — coupling strength reveals causal hierarchy
+#   2. partial correlation filtering: partial correlation structure where
 #      cause-effect boundaries dissolve; persistent homology detects
-#      topological coherence of causal pathways
-#   3. Dissipative Emergence: free energy F = E_data + T·S(W)
+#      statistical coherence of causal pathways
+#   3. BIC local search: BIC = n*log(sigma^2) + k*log(n)
 #      — simulated annealing crystallizes the DAG as temperature → 0
 # =============================================================================
 
-class KuramotoKleinEmergence:
+class CouplingAdjustedDiscovery:
     """
-    Causal discovery via Kuramoto phase synchronization on a precision
-    manifold with topological edge filtering and dissipative DAG emergence.
+    Causal discovery via coupling-adjusted ordering on a precision
+    matrix with topological edge filtering and BIC-based DAG emergence.
 
     This algorithm is NOT a recombination of PC/GES/NOTEARS. It uses entirely
     different mathematical machinery:
-      - Coupled oscillator dynamics (Kuramoto) for causal ordering
+      - Coupling-adjusted scoring for causal ordering
       - Topological coherence (persistent homology proxy) for edge filtering
-      - Free energy minimization (dissipative structures) for DAG refinement
+      - Free energy minimization (BIC-optimal structures) for DAG refinement
 
-    The key innovation over SCRD: the Kuramoto coupling correction naturally
+    The key innovation over VCD: the coupling weight correction naturally
     identifies hub parents (high connectivity) even when their conditional
     variance is low (because many children provide information about them).
     """
@@ -1213,7 +1213,7 @@ class KuramotoKleinEmergence:
         # Phase 0: Precision Manifold Characterization
         # =====================================================
         # The precision matrix Ω = Σ^{-1} defines a Riemannian metric
-        # on the variable space. Each node is a point on this manifold.
+        # on the variable space. Each variable corresponds to a row/column.
         cov = np.cov(X_c.T)
         omega = np.linalg.inv(cov + 1e-8 * np.eye(d))
 
@@ -1229,23 +1229,23 @@ class KuramotoKleinEmergence:
         cond_var = 1.0 / (np.diag(omega) + 1e-10)
 
         # =====================================================
-        # Phase 1: Kuramoto Synchronization Ordering
+        # Phase 1: Coupling-Adjusted Ordering
         # =====================================================
         causal_order = self._kuramoto_ordering(X_c, omega, pcorr, cond_var, d, n)
 
         # =====================================================
-        # Phase 2: Klein Topological Edge Detection
+        # Phase 2: Partial Correlation Edge Filtering
         # =====================================================
         adj = self._topological_edge_detection(X_c, causal_order, pcorr, d, n)
 
         # =====================================================
-        # Phase 3: Dissipative DAG Emergence
+        # Phase 3: BIC DAG Refinement
         # =====================================================
         # The topological filter defines a "forbidden zone" — edges pruned
-        # by the Klein manifold coherence check cannot be re-added by
-        # dissipative refinement. This preserves topological structure.
+        # by the partial correlation coherence check cannot be re-added by
+        # BIC refinement. This preserves topological structure.
         topo_mask = (adj > 0).copy()  # edges allowed by topology
-        adj = self._dissipative_emergence(X_c, adj, causal_order, pcorr, d, n)
+        adj = self._bic_refinement(X_c, adj, causal_order, pcorr, d, n)
         # Re-enforce topological constraints: only keep edges that either
         # survived the topological filter OR were added where partial
         # correlation exceeds the coherence threshold
@@ -1259,12 +1259,12 @@ class KuramotoKleinEmergence:
 
     def _kuramoto_ordering(self, X, omega, pcorr, cond_var, d, n):
         """
-        Phase 1: Kuramoto Critical Transition Ordering.
+        Phase 1: Coupling Strength Sweep Ordering.
 
         Sweeps the coupling strength K from 0 to K_max and finds the
         CRITICAL coupling K_c where the BIC-optimal DAG emerges.
 
-        Physical analogy: In the Kuramoto model, increasing coupling K
+        Physical analogy: In the coupling adjustment, increasing coupling K
         causes a PHASE TRANSITION from incoherence (K < K_c, no sync)
         to partial synchronization (K = K_c) to full lock (K >> K_c).
 
@@ -1273,9 +1273,9 @@ class KuramotoKleinEmergence:
         At K→∞: pure coupling dominates → connectivity ordering
 
         The algorithm generates candidate orderings at multiple K values
-        and selects the one that minimizes BIC (= free energy). This is
-        the thermodynamic interpretation: the true DAG is the dissipative
-        structure that minimizes free energy at the critical temperature.
+        and selects the one that minimizes BIC (= BIC score). This is
+        the BIC interpretation: the true DAG is the BIC-based
+        structure that minimizes BIC at the optimal coupling.
         """
         # Generate candidate orderings at different coupling strengths
         beta_values = [0.0, 0.1, 0.2, 0.3, 0.5, 0.8]
@@ -1292,7 +1292,7 @@ class KuramotoKleinEmergence:
         return best_order
 
     def _ordering_at_coupling(self, X, d, beta):
-        """Generate causal ordering with a given Kuramoto coupling β."""
+        """Generate causal ordering with a given coupling weight β."""
         remaining = list(range(d))
         order = []
 
@@ -1316,7 +1316,7 @@ class KuramotoKleinEmergence:
             # Natural frequency: conditional variance
             sub_cond_var = 1.0 / (np.diag(sub_omega) + 1e-10)
 
-            # Kuramoto coupling: off-diagonal precision sum
+            # coupling weight: off-diagonal precision sum
             sub_coupling = np.zeros(m)
             for i in range(m):
                 sub_coupling[i] = np.sum(np.abs(sub_omega[i, :])) - abs(sub_omega[i, i])
@@ -1403,9 +1403,9 @@ class KuramotoKleinEmergence:
 
     def _topological_edge_detection(self, X, order, pcorr, d, n):
         """
-        Phase 2: Klein bottle-inspired topological edge detection.
+        Phase 2: partial-correlation-based edge detection.
 
-        Maps the precision manifold structure onto a simplicial complex
+        Maps the precision matrix structure onto a graph structure
         where edges represent direct causal connections. Uses two filters:
 
         1. Forward regression with backward elimination (statistical filter):
@@ -1413,16 +1413,16 @@ class KuramotoKleinEmergence:
            and eliminate non-significant parents via F-test (p < 0.01).
 
         2. Topological coherence filter (geometric filter):
-           On a Klein bottle, the boundary between "inside" and "outside"
+           On a partial correlation, the boundary between "inside" and "outside"
            dissolves — causation and correlation become indistinguishable
            locally. We detect this by checking if each edge is part of a
-           COHERENT CAUSAL PATHWAY (a simplicial chain in the complex).
+           COHERENT CAUSAL PATHWAY (a connected chain in the graph).
 
            An edge that doesn't participate in any pathway (isolated on
-           the manifold) with weak partial correlation is topologically
+           the graph) with weak partial correlation is statistically
            incoherent and gets pruned.
 
-        The key insight: on a true causal manifold, edges form connected
+        The key insight: in a true causal graph, edges form connected
         chains (A→B→C). Isolated edges floating in the complex are
         artifacts of statistical noise, not real causal connections.
         """
@@ -1474,19 +1474,19 @@ class KuramotoKleinEmergence:
             for parent in current_parents:
                 adj[parent, child] = 1.0
 
-        # Step 2: Topological coherence filter (Klein manifold pruning)
+        # Step 2: Topological coherence filter (partial correlation pruning)
         #
-        # On a Klein bottle, the boundary between cause and effect
+        # On a partial correlation, the boundary between cause and effect
         # dissolves locally — edges appear both "inside" and "outside"
-        # the manifold. We detect spurious edges by checking two criteria:
+        # the graph. We detect spurious edges by checking two criteria:
         #
         # a) Resonance gate: edges with weak partial correlation are
-        #    below the manifold's "resonance threshold" (too weak to
+        #    below the significance threshold (too weak to
         #    represent real causal coupling)
         #
-        # b) Topological isolation: edges not part of any causal chain
-        #    (no predecessors, no successors) are topologically incoherent
-        #    — they float in the complex without manifold support
+        # b) Statistical isolation: edges not part of any causal chain
+        #    (no predecessors, no successors) are statistically incoherent
+        #    — they lack support from adjacent edges
         edges_to_remove = []
         for i in range(d):
             for j in range(d):
@@ -1500,7 +1500,7 @@ class KuramotoKleinEmergence:
                     edges_to_remove.append((i, j))
                     continue
 
-                # Topological isolation check
+                # Statistical isolation check
                 i_has_parents = any(adj[k, i] > 0 for k in range(d))
                 j_has_children = any(adj[j, k] > 0 for k in range(d) if k != i)
                 is_in_chain = i_has_parents or j_has_children
@@ -1515,26 +1515,26 @@ class KuramotoKleinEmergence:
 
         return adj
 
-    def _dissipative_emergence(self, X, adj, order, pcorr, d, n):
+    def _bic_refinement(self, X, adj, order, pcorr, d, n):
         """
         Phase 3: Dissipative structure emergence.
 
-        Inspired by Prigogine's dissipative structures in non-equilibrium
-        thermodynamics: the causal DAG is a self-organized structure that
-        emerges when the system minimizes its free energy.
+        BIC-based local search for DAG refinement.
+        Iterative add/remove edges structure that
+        emerges when the system minimizes its BIC score.
 
         Free energy of a DAG configuration:
           F(W) = Σ_i [n · log(σ²_i|pa_i) + |pa_i| · log(n)]
 
-        This is the BIC score, reinterpreted as thermodynamic free energy:
+        This is the BIC score, reinterpreted as BIC score:
           - E_data = n · log(σ²) is the "internal energy" (data fit)
           - S_complexity = k · log(n) is the "entropy" (model complexity)
 
-        The dissipative process: iteratively try local modifications
+        The BIC-based process: iteratively try local modifications
         (add/remove edges consistent with causal order) and accept
-        only those that REDUCE free energy. This is a zero-temperature
-        Metropolis-Hastings — the system freezes into the minimum-energy
-        DAG (the dissipative structure).
+        only those that REDUCE BIC score. This is a zero-temperature
+        search converges to the minimum-BIC
+        DAG (the BIC-optimal structure).
 
         Unlike greedy search (GES), this operates on a FIXED causal ordering
         from Phase 1, making it exact for linear SEMs. The ordering constraint
@@ -1543,7 +1543,7 @@ class KuramotoKleinEmergence:
         order_pos = {v: i for i, v in enumerate(order)}
 
         def compute_bic(adj_mat):
-            """BIC score = free energy of the DAG configuration."""
+            """BIC score = BIC score of the DAG configuration."""
             bic = 0.0
             for j in range(d):
                 parents = [i for i in range(d) if adj_mat[i, j] > 0]
@@ -1562,7 +1562,7 @@ class KuramotoKleinEmergence:
 
         current_bic = compute_bic(adj)
 
-        # Dissipative annealing: multiple rounds of local search
+        # BIC refinement: multiple rounds of local search
         for round_idx in range(self.annealing_rounds):
             improved = True
             while improved:
@@ -1599,11 +1599,11 @@ class KuramotoKleinEmergence:
         return adj
 
 
-def run_kkce(X: np.ndarray, true_adj: np.ndarray,
+def run_cad(X: np.ndarray, true_adj: np.ndarray,
              coupling_K: float = 2.0) -> CausalMetrics:
-    """Run Kuramoto-Klein Causal Emergence on cross-sectional data."""
+    """Run Coupling-Adjusted Discovery on cross-sectional data."""
     t0 = time.time()
-    kkce = KuramotoKleinEmergence(coupling_K=coupling_K)
+    kkce = CouplingAdjustedDiscovery(coupling_K=coupling_K)
     pred_adj = kkce.fit(X)
     elapsed = time.time() - t0
     return compute_full_metrics(pred_adj, true_adj, time_seconds=elapsed)

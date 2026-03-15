@@ -86,10 +86,10 @@ In v0.6.0, when raw data is available, Layer 2 receives it directly (bypassing L
 The following modules are implemented but **not yet validated on benchmarks**:
 
 - **Liquid Causal Graph**: Co-evolving ODE system where graph weights $W(t)$ evolve jointly with state $x(t)$. Replaces the static adjacency matrix with a dynamical system.
-- **Symbolic Genesis Engine**: Neural network-based invariant detection from ODE trajectories. Attempts to discover conserved quantities ($dh/dt \approx 0$).
-- **Autocatalytic Causal Network**: Iterative feedback loop running GNN, Liquid ODE, and symbolic components in sequence with early stopping.
+- **Trajectory Invariant Finder**: Neural network-based invariant detection from ODE trajectories. Attempts to discover conserved quantities ($dh/dt \approx 0$).
+- **Iterative Refinement Loop**: Iterative feedback loop running GNN, Liquid ODE, and symbolic components in sequence with early stopping.
 
-These extensions are accessible via `HHCRASingularity` but have no benchmark evidence of performance improvement over the base architecture.
+These extensions are accessible via `HHCRAExperimental` but have no benchmark evidence of performance improvement over the base architecture.
 
 ## Evaluation
 
@@ -141,8 +141,8 @@ Evaluated on Asia (8 vars, 8 edges) and Sachs (11 vars, 17 edges) with linear-Ga
 
 | Method | SHD | F1 | TPR | FDR |
 |--------|-----|-----|-----|-----|
-| **KKCE (ours, v0.10)** | **3** | **0.824** | **0.875** | **0.222** |
-| **SCRD (ours, v0.9)** | **3** | **0.824** | **0.875** | **0.222** |
+| **CAD (ours, v0.10)** | **3** | **0.824** | **0.875** | **0.222** |
+| **VCD (ours, v0.9)** | **3** | **0.824** | **0.875** | **0.222** |
 | NOTEARS | 5 | 0.737 | 0.875 | 0.364 |
 | GES | 7 | 0.222 | 0.125 | 0.000 |
 | PC | 9 | 0.182 | 0.125 | 0.667 |
@@ -151,13 +151,13 @@ Evaluated on Asia (8 vars, 8 edges) and Sachs (11 vars, 17 edges) with linear-Ga
 
 | Method | SHD | F1 | TPR | FDR |
 |--------|-----|-----|-----|-----|
-| **KKCE (ours, v0.10)** | **8** | **0.765** | **0.765** | **0.235** |
-| SCRD (ours, v0.9) | 15 | 0.571 | 0.588 | 0.444 |
+| **CAD (ours, v0.10)** | **8** | **0.765** | **0.765** | **0.235** |
+| VCD (ours, v0.9) | 15 | 0.571 | 0.588 | 0.444 |
 | GES | 16 | 0.111 | 0.059 | 0.000 |
 | NOTEARS | 21 | 0.400 | 0.412 | 0.611 |
 | PC | 21 | 0.000 | 0.000 | 1.000 |
 
-**KKCE (Kuramoto-Klein Causal Emergence)** is introduced in v0.10.0. On Sachs, it reduces SHD from 15 (SCRD) to 8 — a 47% improvement. On Asia, it matches SCRD. See [KKCE Algorithm](#kkce-algorithm) below.
+**CAD (Coupling-Adjusted Discovery)** is introduced in v0.10.0. On Sachs, it reduces SHD from 15 (VCD) to 8 — a 47% improvement. On Asia, it matches VCD. See [CAD Algorithm](#kkce-algorithm) below.
 
 ### ODE Integration Accuracy
 
@@ -169,46 +169,46 @@ Evaluated on Asia (8 vars, 8 edges) and Sachs (11 vars, 17 edges) with linear-Ga
 
 RK4 and DOPRI5 achieve near-machine-precision integration error on the benchmark ODE system.
 
-## KKCE Algorithm
+## CAD Algorithm
 
-**Kuramoto-Klein Causal Emergence (KKCE)** is a v0.10.0 algorithm that extends SCRD by incorporating three mathematical frameworks from physics and topology:
+**Coupling-Adjusted Discovery (CAD)** is a v0.10.0 algorithm that extends VCD by incorporating three mathematical frameworks from physics and topology:
 
 ### Mathematical Foundations
 
-1. **Kuramoto Model** (phase synchronization): Each variable is a coupled oscillator with natural frequency proportional to conditional variance. The coupling strength comes from off-diagonal precision matrix entries. Hub parents with many connections have strong coupling that compensates for their lower conditional variance.
+1. **coupling adjustment** (coupling adjustment): Each variable has a score combining conditional variance and coupling strength. The coupling strength comes from off-diagonal precision matrix entries. Hub parents with many connections have strong coupling that compensates for their lower conditional variance.
 
-2. **Klein Bottle Topology** (edge filtering): Edges on the causal manifold must satisfy topological coherence — they should participate in causal chains (simplicial chains in the complex). Isolated edges with weak partial correlations are topologically incoherent and get pruned.
+2. **partial correlation filtering** (edge filtering): Edges must satisfy statistical coherence — they should participate in causal chains). Isolated edges with weak partial correlations are lacking statistical support and get pruned.
 
-3. **Dissipative Emergence** (DAG refinement): The causal DAG is a dissipative structure that minimizes free energy F = Σ n·log(σ²) + k·log(n) (= BIC score). Local modifications (add/remove edges) are accepted only if they reduce free energy, subject to topological constraints.
+3. **BIC local search** (DAG refinement): The causal DAG is a BIC-optimal structure that minimizes BIC score). Local modifications (add/remove edges) are accepted only if they reduce BIC score, subject to topological constraints.
 
-### Key Innovation: Kuramoto Critical Transition
+### Key Innovation: Coupling Strength Sweep
 
 The algorithm sweeps coupling strength β from 0 to 0.8 and selects the ordering that minimizes BIC:
-- At β=0: pure conditional variance ordering (equivalent to SCRD)
+- At β=0: pure conditional variance ordering (equivalent to VCD)
 - At β=K_c (critical coupling): optimal ordering for the graph
 - BIC automatically selects the right β for each graph topology
 
-This resolves SCRD's limitation on hub-heavy graphs (Sachs): hub parents like PKA (6 children) have low conditional variance but high coupling strength, so the Kuramoto correction pushes them earlier in the ordering.
+This resolves VCD's limitation on hub-heavy graphs (Sachs): hub parents like PKA (6 children) have low conditional variance but high coupling strength, so the coupling correction pushes them earlier in the ordering.
 
 ### Limitations
 
-- Same as SCRD: requires unequal noise variances, linear Gaussian assumption.
-- BIC sweep adds computational cost: O(|β_values| × d³ × n) vs SCRD's O(d³ × n).
+- Same as VCD: requires unequal noise variances, linear Gaussian assumption.
+- BIC sweep adds computational cost: O(|β_values| × d³ × n) vs VCD's O(d³ × n).
 - The coupling correction helps dense hub-heavy graphs but provides no benefit for sparse graphs.
 
-## SCRD Algorithm
+## VCD Algorithm
 
-**Spectral Causal Resonance Discovery (SCRD)** is a novel causal discovery algorithm introduced in v0.9.0. It operates on cross-sectional data without requiring temporal observations, conditional independence tests (PC), greedy equivalence search (GES), or continuous DAG optimization (NOTEARS).
+**Variance Cascade Discovery (VCD)** is a novel causal discovery algorithm introduced in v0.9.0. It operates on cross-sectional data without requiring temporal observations, conditional independence tests (PC), greedy equivalence search (GES), or continuous DAG optimization (NOTEARS).
 
 ### Four-Phase Architecture
 
 1. **Node Spectral Characterization**: Compute precision matrix $\Omega = \Sigma^{-1}$, extract node frequencies ($\Omega_{ii}$), marginal energies ($\text{Var}(X_i)$), and quality factors ($Q_i = \text{Var}(X_i) \cdot \Omega_{ii}$).
 
-2. **Resonance Coupling Evaluation**: Decompose precision matrix into spectral modes via eigendecomposition. Compute partial correlations and mode-weighted coupling strengths.
+2. **Partial Correlation Analysis**: Decompose precision matrix into spectral modes via eigendecomposition. Compute partial correlations and mode-weighted coupling strengths.
 
 3. **Iterative Conditional Variance Cascade Ordering**: Identify causal ordering by iteratively selecting the variable with highest conditional variance $\text{Var}(X_i | X_{-i}) = 1/\Omega_{ii}$ from the sub-precision matrix of remaining variables. Root causes have highest conditional variance (their intrinsic noise dominates); effects have lowest (small residual noise). Remove identified root and recompute.
 
-4. **Forward Regression with Backward Elimination**: Given the causal ordering, for each variable regress on all predecessors and apply backward elimination with F-test (p<0.01) to find the minimal parent set. Resonance-gated pruning removes edges with weak partial correlations.
+4. **Forward Regression with Backward Elimination**: Given the causal ordering, for each variable regress on all predecessors and apply backward elimination with F-test (p<0.01) to find the minimal parent set. Partial-correlation pruning removes edges with weak partial correlations.
 
 ### Key Properties
 
@@ -248,7 +248,7 @@ In v0.6.0, this problem is partially circumvented by passing raw data directly t
 5. **Small scale**: Evaluated on graphs with 3--11 variables. Scalability to graphs with 50+ variables is untested.
 6. **Counterfactual noise model**: ABP assumes additive Gaussian exogenous noise. Performance degrades under non-Gaussian or heteroscedastic noise.
 7. **Computational cost**: Neural ODE integration (RK4) and ensemble training in v0.6.0 incur significant per-run cost.
-8. **Unvalidated extensions**: Liquid Causal Graph, Symbolic Genesis, and Autocatalytic Network are implemented but have no benchmark evidence of improving over the base architecture.
+8. **Unvalidated extensions**: Liquid Causal Graph, Invariant Finder, and Autofeedback Network are implemented but have no benchmark evidence of improving over the base architecture.
 
 ## Dependencies
 
@@ -266,14 +266,14 @@ python -m hhcra.main      # Run toy benchmark suite
 ## Changelog
 
 ### v0.10.0
-- **KKCE (Kuramoto-Klein Causal Emergence)**: Novel algorithm combining Kuramoto phase synchronization, Klein bottle topological filtering, and dissipative structure emergence.
-  - Sachs: SHD=8, F1=0.765 (47% SHD improvement over SCRD).
-  - Asia: SHD=3, F1=0.824 (matches SCRD).
-  - Kuramoto critical transition: adaptive coupling sweep selects optimal β per graph topology.
-- 6 new KKCE tests, all passing.
+- **CAD (Coupling-Adjusted Discovery)**: Novel algorithm combining coupling-adjusted ordering, partial correlation topological filtering, and BIC refinement.
+  - Sachs: SHD=8, F1=0.765 (47% SHD improvement over VCD).
+  - Asia: SHD=3, F1=0.824 (matches VCD).
+  - coupling strength sweep: adaptive coupling sweep selects optimal β per graph topology.
+- 6 new CAD tests, all passing.
 
 ### v0.9.0
-- **SCRD (Spectral Causal Resonance Discovery)**: Novel causal discovery algorithm that beats all standard baselines.
+- **VCD (Variance Cascade Discovery)**: Novel causal discovery algorithm that beats all standard baselines.
   - Asia: SHD=3, F1=0.824 (vs NOTEARS SHD=5, PC SHD=9, GES SHD=7).
   - Sachs: SHD=15, F1=0.571 (vs GES SHD=16, NOTEARS SHD=21, PC SHD=21).
 - HHCRA-Integrated method: combines temporal Granger (multi-threshold + BIC cross-validation) with partial correlation validation and residual variance orientation.
@@ -299,7 +299,7 @@ python -m hhcra.main      # Run toy benchmark suite
 - Added baseline runners for PC, Granger, NOTEARS, Random, Empty.
 - Introduced raw-data bypass for Layer 2 warm initialization (improves structure learning, bypasses Layer 1).
 - Added ensemble training over multiple seeds with model selection.
-- Added experimental modules: Liquid Causal Graph, Symbolic Genesis Engine, Autocatalytic Causal Network, HHCRASingularity orchestrator.
+- Added experimental modules: Liquid Causal Graph, Trajectory Invariant Finder, Iterative Refinement Loop, HHCRAExperimental orchestrator.
 - Extended test suite to 267 tests.
 
 ### v0.5.0

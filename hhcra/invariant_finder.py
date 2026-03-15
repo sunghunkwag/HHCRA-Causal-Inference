@@ -1,9 +1,9 @@
 """
-Symbolic Genesis Engine: Discovers symbolic causal rules from neural dynamics.
+Trajectory Invariant Finder: Discovers symbolic causal rules from neural dynamics.
 
 Instead of relying on HARDCODED rules (d-separation, do-calculus 3 rules),
 this engine DISCOVERS symbolic invariants from the Liquid Neural Network's
-ODE trajectories. This is the neural analogue of Noether's theorem:
+ODE trajectories. This is the invariant detection:
 
     Symmetry in dynamics <=> Conserved quantity <=> Symbolic rule
 
@@ -35,7 +35,7 @@ from hhcra.causal_graph import CausalGraphData
 
 
 @dataclass
-class SymbolicRule:
+class InvariantRule:
     """A discovered symbolic rule about causal structure."""
     name: str
     description: str
@@ -187,7 +187,7 @@ class InvariantFinder(nn.Module):
         return total_loss / B
 
 
-class SymbolicDistiller:
+class InvariantDistiller:
     """
     Converts neural invariants into symbolic expressions.
 
@@ -328,13 +328,13 @@ class SymbolicDistiller:
         return 'edge_constraint'
 
 
-class SymbolicGenesisEngine(nn.Module):
+class TrajectoryInvariantFinder(nn.Module):
     """
-    The Symbolic Genesis Engine: discovers causal rules from dynamics.
+    The Trajectory Invariant Finder: discovers causal rules from dynamics.
 
     Orchestrates the full pipeline:
     1. InvariantFinder searches for conserved quantities in ODE trajectories
-    2. SymbolicDistiller converts neural invariants to symbolic expressions
+    2. InvariantDistiller converts neural invariants to symbolic expressions
     3. Validation checks discovered rules against known causal axioms
     4. Novel rules are registered for use in reasoning
 
@@ -346,14 +346,14 @@ class SymbolicGenesisEngine(nn.Module):
         super().__init__()
         self.config = config
         self.invariant_finder = InvariantFinder(config, num_candidates)
-        self.distiller = SymbolicDistiller(config)
+        self.distiller = InvariantDistiller(config)
 
         # Registry of discovered rules
-        self.discovered_rules: List[SymbolicRule] = []
+        self.discovered_rules: List[InvariantRule] = []
         self.rule_counter = 0
 
     def discover_rules(self, trajectories: torch.Tensor,
-                       graph: CausalGraphData) -> List[SymbolicRule]:
+                       graph: CausalGraphData) -> List[InvariantRule]:
         """
         Full discovery pipeline: trajectories -> invariants -> symbolic rules.
 
@@ -362,7 +362,7 @@ class SymbolicGenesisEngine(nn.Module):
             graph: current causal graph structure
 
         Returns:
-            List of newly discovered SymbolicRule objects
+            List of newly discovered InvariantRule objects
         """
         new_rules = []
 
@@ -408,8 +408,8 @@ class SymbolicGenesisEngine(nn.Module):
 
             # Create symbolic rule
             self.rule_counter += 1
-            rule = SymbolicRule(
-                name=f"Genesis_Rule_{self.rule_counter}",
+            rule = InvariantRule(
+                name=f"Invariant_{self.rule_counter}",
                 description=f"Invariant involving variables {dependencies}",
                 expression=expression,
                 confidence=1.0 - inv['relative_variance'],
@@ -531,7 +531,7 @@ class SymbolicGenesisEngine(nn.Module):
     def summary(self) -> str:
         """Human-readable summary of discovered rules."""
         lines = [
-            f"Symbolic Genesis Engine: {len(self.discovered_rules)} rules discovered",
+            f"Trajectory Invariant Finder: {len(self.discovered_rules)} rules discovered",
             f"  Novel rules: {sum(1 for r in self.discovered_rules if r.is_novel)}",
             f"  Rediscovered known rules: {sum(1 for r in self.discovered_rules if not r.is_novel)}",
         ]

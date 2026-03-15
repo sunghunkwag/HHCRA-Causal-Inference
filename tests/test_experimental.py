@@ -1,11 +1,11 @@
 """
-Tests for HHCRA Singularity: Liquid Causal Graph, Symbolic Genesis, Autocatalytic Net.
+Tests for HHCRA Experimental: Liquid Causal Graph, Invariant Finder, Autofeedback Net.
 
-Validates the three breakthrough innovations:
+Validates the three experimental extensions (unvalidated):
 1. Liquid Causal Graph — graph + state co-evolution via coupled ODE
-2. Symbolic Genesis Engine — automatic invariant/rule discovery
-3. Autocatalytic Causal Network — self-catalytic convergence loop
-4. HHCRASingularity — unified system integration
+2. Trajectory Invariant Finder — automatic invariant/rule discovery
+3. Iterative Refinement Loop — iterative convergence loop
+4. HHCRAExperimental — unified system integration
 """
 
 import pytest
@@ -17,11 +17,11 @@ from hhcra.causal_graph import CausalGraphData, CausalQueryType
 from hhcra.layer2_mechanism import CausalGNN, MechanismLayer
 from hhcra.layer3_reasoning import NeuroSymbolicEngine
 from hhcra.liquid_causal_graph import LiquidCausalGraph, GraphDynamicsNet
-from hhcra.symbolic_genesis import (
-    SymbolicGenesisEngine, SymbolicRule, InvariantFinder, SymbolicDistiller
+from hhcra.invariant_finder import (
+    TrajectoryInvariantFinder, InvariantRule, InvariantFinder, InvariantDistiller
 )
-from hhcra.autocatalytic_causal_net import AutocatalyticCausalNet
-from hhcra.singularity import HHCRASingularity
+from hhcra.iterative_refinement import IterativeRefinementNet
+from hhcra.experimental import HHCRAExperimental
 
 
 @pytest.fixture
@@ -180,7 +180,7 @@ class TestLiquidCausalGraph:
 
 
 # =============================================================================
-# TEST SUITE 2: Symbolic Genesis Engine
+# TEST SUITE 2: Trajectory Invariant Finder
 # =============================================================================
 
 class TestInvariantFinder:
@@ -224,11 +224,11 @@ class TestInvariantFinder:
         assert has_grad, "No gradients flow to InvariantFinder parameters"
 
 
-class TestSymbolicDistiller:
+class TestInvariantDistiller:
     """Test neural-to-symbolic conversion."""
 
     def test_probe_dependencies(self, config):
-        distiller = SymbolicDistiller(config)
+        distiller = InvariantDistiller(config)
         basis_net = torch.nn.Sequential(
             torch.nn.Linear(config.num_vars * config.latent_dim, config.latent_dim),
             torch.nn.Tanh(),
@@ -242,7 +242,7 @@ class TestSymbolicDistiller:
             assert 0 <= d < config.num_vars
 
     def test_distill_expression(self, config):
-        distiller = SymbolicDistiller(config)
+        distiller = InvariantDistiller(config)
         basis_net = torch.nn.Sequential(
             torch.nn.Linear(config.num_vars * config.latent_dim, 1),
         )
@@ -252,7 +252,7 @@ class TestSymbolicDistiller:
         assert len(expr) > 0
 
     def test_classify_independence(self, config):
-        distiller = SymbolicDistiller(config)
+        distiller = InvariantDistiller(config)
         graph = make_diamond_graph()
         # Nodes 1 and 2 have no direct edge between them
         rule_type = distiller.classify_rule_type([1, 2], graph)
@@ -260,11 +260,11 @@ class TestSymbolicDistiller:
         assert rule_type in ('independence', 'edge_constraint', 'flow_conservation')
 
 
-class TestSymbolicGenesisEngine:
+class TestTrajectoryInvariantFinder:
     """Test the full rule discovery pipeline."""
 
     def test_discover_rules(self, config):
-        engine = SymbolicGenesisEngine(config, num_candidates=4)
+        engine = TrajectoryInvariantFinder(config, num_candidates=4)
         graph = make_diamond_graph()
         # Use constant-ish trajectories to ensure invariants are found
         B, T, N, D = 2, 8, config.num_vars, config.latent_dim
@@ -273,13 +273,13 @@ class TestSymbolicGenesisEngine:
 
         rules = engine.discover_rules(trajectories, graph)
         assert isinstance(rules, list)
-        # All rules should be SymbolicRule instances
+        # All rules should be InvariantRule instances
         for rule in rules:
-            assert isinstance(rule, SymbolicRule)
+            assert isinstance(rule, InvariantRule)
             assert 0.0 <= rule.confidence <= 1.0
 
     def test_train_finder_reduces_loss(self, config):
-        engine = SymbolicGenesisEngine(config, num_candidates=4)
+        engine = TrajectoryInvariantFinder(config, num_candidates=4)
         trajectories = torch.randn(2, 8, config.num_vars, config.latent_dim)
         losses = engine.train_finder(trajectories, lr=0.01, steps=10)
         assert len(losses) == 10
@@ -287,9 +287,9 @@ class TestSymbolicGenesisEngine:
         assert losses[-1] < losses[0] * 10, "Loss exploded during training"
 
     def test_get_graph_constraints(self, config):
-        engine = SymbolicGenesisEngine(config, num_candidates=4)
+        engine = TrajectoryInvariantFinder(config, num_candidates=4)
         # Manually add a rule
-        rule = SymbolicRule(
+        rule = InvariantRule(
             name="Test_Rule", description="Test",
             expression="h(x0, x1) ≈ const",
             confidence=0.9, involved_nodes={0, 1},
@@ -302,26 +302,26 @@ class TestSymbolicGenesisEngine:
         assert constraints[0]['type'] == 'must_not_exist'
 
     def test_summary_string(self, config):
-        engine = SymbolicGenesisEngine(config, num_candidates=4)
+        engine = TrajectoryInvariantFinder(config, num_candidates=4)
         summary = engine.summary()
         assert isinstance(summary, str)
-        assert "Symbolic Genesis Engine" in summary
+        assert "Trajectory Invariant Finder" in summary
 
 
 # =============================================================================
-# TEST SUITE 3: Autocatalytic Causal Network
+# TEST SUITE 3: Iterative Refinement Loop
 # =============================================================================
 
-class TestAutocatalyticCausalNet:
-    """Test the self-catalytic convergence loop."""
+class TestIterativeRefinementNet:
+    """Test the iterative convergence loop."""
 
     def test_single_cycle(self, small_config):
         torch.manual_seed(42)
-        acn = AutocatalyticCausalNet(small_config)
+        acn = IterativeRefinementNet(small_config)
         B, T, N, D = 2, 4, small_config.num_vars, small_config.latent_dim
         latent = torch.randn(B, T, N, D)
 
-        result = acn.autocatalytic_cycle(latent, cycle_idx=0)
+        result = acn.refinement_cycle(latent, cycle_idx=0)
 
         assert 'trajectories' in result
         assert 'graph' in result
@@ -331,18 +331,18 @@ class TestAutocatalyticCausalNet:
 
     def test_multiple_cycles(self, small_config):
         torch.manual_seed(42)
-        acn = AutocatalyticCausalNet(small_config)
+        acn = IterativeRefinementNet(small_config)
         B, T, N, D = 2, 4, small_config.num_vars, small_config.latent_dim
         latent = torch.randn(B, T, N, D)
 
         for i in range(3):
-            result = acn.autocatalytic_cycle(latent, cycle_idx=i)
+            result = acn.refinement_cycle(latent, cycle_idx=i)
 
         assert len(acn.cycle_history) == 3
 
     def test_run_until_convergence(self, small_config):
         torch.manual_seed(42)
-        acn = AutocatalyticCausalNet(small_config)
+        acn = IterativeRefinementNet(small_config)
         B, T, N, D = 2, 4, small_config.num_vars, small_config.latent_dim
         latent = torch.randn(B, T, N, D)
 
@@ -357,7 +357,7 @@ class TestAutocatalyticCausalNet:
 
     def test_constraint_application(self, small_config):
         """Constraints should modify GNN weights."""
-        acn = AutocatalyticCausalNet(small_config)
+        acn = IterativeRefinementNet(small_config)
         N = small_config.num_vars
 
         # Record initial weight
@@ -377,7 +377,7 @@ class TestAutocatalyticCausalNet:
         assert new_w <= initial_w, "must_not_exist should suppress edge weight"
 
     def test_structure_distance(self, small_config):
-        acn = AutocatalyticCausalNet(small_config)
+        acn = IterativeRefinementNet(small_config)
         N = small_config.num_vars
         W1 = torch.zeros(N, N)
         W2 = torch.ones(N, N)
@@ -390,7 +390,7 @@ class TestAutocatalyticCausalNet:
     def test_no_nan_after_cycles(self, small_config):
         """System should remain numerically stable across cycles."""
         torch.manual_seed(42)
-        acn = AutocatalyticCausalNet(small_config)
+        acn = IterativeRefinementNet(small_config)
         latent = torch.randn(2, 4, small_config.num_vars, small_config.latent_dim)
 
         result = acn.run_until_convergence(
@@ -401,57 +401,57 @@ class TestAutocatalyticCausalNet:
         assert torch.isfinite(acn.gnn.W.data).all(), "NaN in GNN weights"
 
     def test_summary_string(self, small_config):
-        acn = AutocatalyticCausalNet(small_config)
+        acn = IterativeRefinementNet(small_config)
         summary = acn.summary()
         assert isinstance(summary, str)
-        assert "Autocatalytic" in summary
+        assert "Autofeedback" in summary
 
 
 # =============================================================================
-# TEST SUITE 4: HHCRASingularity (Unified System)
+# TEST SUITE 4: HHCRAExperimental (Unified System)
 # =============================================================================
 
-class TestHHCRASingularity:
-    """Test the unified Singularity system."""
+class TestHHCRAExperimental:
+    """Test the unified Experimental system."""
 
     def test_construction(self, small_config):
-        model = HHCRASingularity(small_config)
+        model = HHCRAExperimental(small_config)
         assert model.layer1 is not None
         assert model.layer2 is not None
         assert model.layer3 is not None
         assert model.liquid_graph is not None
-        assert model.symbolic_genesis is not None
-        assert model.autocatalytic is not None
+        assert model.invariant_finder is not None
+        assert model.iterative_refinement is not None
 
-    def test_train_singularity(self, small_config):
-        """Full singularity training should complete without error."""
+    def test_train_experimental(self, small_config):
+        """Full experimental training should complete without error."""
         torch.manual_seed(42)
-        model = HHCRASingularity(small_config)
+        model = HHCRAExperimental(small_config)
         obs = torch.randn(2, 4, small_config.obs_dim)
 
-        result = model.train_singularity(obs, max_cycles=3, verbose=False)
+        result = model.train_experimental(obs, max_cycles=3, verbose=False)
 
         assert 'final_graph' in result
         assert 'all_rules' in result
         assert result['total_cycles'] >= 1
 
-    def test_forward_includes_singularity_data(self, small_config):
-        """Forward pass should include Singularity metadata."""
+    def test_forward_includes_experimental_data(self, small_config):
+        """Forward pass should include Experimental metadata."""
         torch.manual_seed(42)
-        model = HHCRASingularity(small_config)
+        model = HHCRAExperimental(small_config)
         obs = torch.randn(2, 4, small_config.obs_dim)
 
         output = model.forward(obs)
 
         assert 'discovered_rules' in output
-        assert 'autocatalytic_converged' in output
+        assert 'iterative_refinement_converged' in output
 
-    def test_query_includes_singularity_metadata(self, small_config):
-        """Query results should include Singularity metadata."""
+    def test_query_includes_experimental_metadata(self, small_config):
+        """Query results should include Experimental metadata."""
         torch.manual_seed(42)
-        model = HHCRASingularity(small_config)
+        model = HHCRAExperimental(small_config)
         obs = torch.randn(2, 4, small_config.obs_dim)
-        model.train_singularity(obs, max_cycles=2, verbose=False)
+        model.train_experimental(obs, max_cycles=2, verbose=False)
         model.eval()
 
         result = model.query(
@@ -459,16 +459,16 @@ class TestHHCRASingularity:
             X=0, Y=1, verbose=False,
         )
 
-        assert 'singularity' in result
-        assert 'discovered_rules' in result['singularity']
-        assert 'autocatalytic_converged' in result['singularity']
+        assert 'experimental' in result
+        assert 'discovered_rules' in result['experimental']
+        assert 'iterative_refinement_converged' in result['experimental']
 
     def test_interventional_query_after_training(self, small_config):
-        """Interventional query should work after Singularity training."""
+        """Interventional query should work after experimental training."""
         torch.manual_seed(42)
-        model = HHCRASingularity(small_config)
+        model = HHCRAExperimental(small_config)
         obs = torch.randn(2, 4, small_config.obs_dim)
-        model.train_singularity(obs, max_cycles=2, verbose=False)
+        model.train_experimental(obs, max_cycles=2, verbose=False)
         model.eval()
 
         D = small_config.latent_dim
@@ -485,25 +485,25 @@ class TestHHCRASingularity:
     def test_no_nan_in_parameters(self, small_config):
         """All parameters should remain finite after training."""
         torch.manual_seed(42)
-        model = HHCRASingularity(small_config)
+        model = HHCRAExperimental(small_config)
         obs = torch.randn(2, 4, small_config.obs_dim)
-        model.train_singularity(obs, max_cycles=2, verbose=False)
+        model.train_experimental(obs, max_cycles=2, verbose=False)
 
         for name, param in model.named_parameters():
             assert torch.isfinite(param).all(), f"NaN/Inf in {name}"
 
-    def test_singularity_summary(self, small_config):
+    def test_experimental_summary(self, small_config):
         """Summary should be a non-empty string."""
-        model = HHCRASingularity(small_config)
-        summary = model.singularity_summary()
+        model = HHCRAExperimental(small_config)
+        summary = model.experimental_summary()
         assert isinstance(summary, str)
         assert "SINGULARITY" in summary
         assert "Pearl's Ladder" in summary
 
     def test_backward_compatible_with_base_hhcra(self, small_config):
-        """Singularity model should be usable as a regular HHCRA model."""
+        """Experimental model should be usable as a regular HHCRA model."""
         torch.manual_seed(42)
-        model = HHCRASingularity(small_config)
+        model = HHCRAExperimental(small_config)
         obs = torch.randn(2, 4, small_config.obs_dim)
 
         # Should support base HHCRA training methods
@@ -523,9 +523,9 @@ class TestHHCRASingularity:
 class TestEmergence:
     """Test emergent properties that arise from the interaction of components."""
 
-    def test_autocatalytic_improves_structure(self, small_config):
+    def test_iterative_refinement_improves_structure(self, small_config):
         """
-        Autocatalytic cycles should produce a more refined graph than
+        Autofeedback cycles should produce a more refined graph than
         single-pass training (measured by DAG validity and edge count).
         """
         torch.manual_seed(42)
@@ -543,25 +543,25 @@ class TestEmergence:
         A_single = gnn_only.adjacency(hard=True)
         is_dag_single = gnn_only._is_dag(A_single)
 
-        # Autocatalytic: full loop
+        # Autofeedback: full loop
         torch.manual_seed(42)
-        acn = AutocatalyticCausalNet(small_config)
+        acn = IterativeRefinementNet(small_config)
         result = acn.run_until_convergence(
             latent, max_cycles=3, verbose=False
         )
 
         # Both should produce valid results (no crashes)
         assert result['final_graph'] is not None
-        # The autocatalytic graph should exist
+        # The iterative_refinement graph should exist
         assert result['final_graph'].edge_count() >= 0
 
-    def test_symbolic_genesis_finds_structure_related_invariants(self, small_config):
+    def test_invariant_finder_finds_structure_related_invariants(self, small_config):
         """
         When given trajectories from a structured graph, the Genesis engine
         should discover invariants related to the graph topology.
         """
         torch.manual_seed(42)
-        engine = SymbolicGenesisEngine(small_config, num_candidates=4)
+        engine = TrajectoryInvariantFinder(small_config, num_candidates=4)
         graph = make_diamond_graph()
 
         # Create trajectories with structure: x3 = f(x1, x2)

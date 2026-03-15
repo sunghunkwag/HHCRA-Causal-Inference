@@ -1,20 +1,20 @@
 """
-HHCRA Singularity: Unified system integrating all three breakthrough innovations.
+HHCRA Experimental: Unified system integrating all three experimental extensions (unvalidated).
 
 This is the orchestrator that combines:
 1. Liquid Causal Graph — graph structure as a dynamical system
-2. Symbolic Genesis Engine — automatic rule discovery from dynamics
-3. Autocatalytic Causal Network — self-catalytic convergence loop
+2. Trajectory Invariant Finder — automatic rule discovery from dynamics
+3. Iterative Refinement Loop — iterative convergence loop
 
-The Singularity system extends the base HHCRA architecture by replacing
-the static pipeline (L1 → L2 → L3) with a living, breathing system where:
+The Experimental system extends the base HHCRA architecture by replacing
+the static pipeline (L1 → L2 → L3) with a iterative system where:
 - The graph evolves continuously (not just during training)
 - Rules are discovered (not hardcoded)
 - All components catalyze each other's improvement
 
 Usage:
-    model = HHCRASingularity(config)
-    model.train_singularity(observations)  # Full pipeline with autocatalysis
+    model = HHCRAExperimental(config)
+    model.train_experimental(observations)  # Full pipeline with iterative refinement
     result = model.query(observations, ...)  # Enhanced causal queries
 
 The existing HHCRA API is preserved for backward compatibility.
@@ -33,23 +33,23 @@ from hhcra.layer2_mechanism import MechanismLayer
 from hhcra.layer3_reasoning import ReasoningLayer
 from hhcra.interfaces import LayerInterface, FeedbackRouter
 from hhcra.liquid_causal_graph import LiquidCausalGraph
-from hhcra.symbolic_genesis import SymbolicGenesisEngine
-from hhcra.autocatalytic_causal_net import AutocatalyticCausalNet
+from hhcra.invariant_finder import TrajectoryInvariantFinder
+from hhcra.iterative_refinement import IterativeRefinementNet
 
 
-class HHCRASingularity(nn.Module):
+class HHCRAExperimental(nn.Module):
     """
-    HHCRA Singularity: The complete system with all three innovations.
+    HHCRA Experimental: The complete system with all three innovations.
 
     Architecture:
         Layer 1: C-JEPA (Perception) — unchanged
         Layer 2: GNN + Liquid Causal Graph (Structure + Co-evolving Dynamics)
-        Layer 3: Neuro-Symbolic + HRM + Symbolic Genesis (Reasoning + Rule Discovery)
-        Meta:    Autocatalytic Loop (Self-catalytic convergence)
+        Layer 3: Neuro-Symbolic + HRM + Invariant Finder (Reasoning + Rule Discovery)
+        Meta:    Autofeedback Loop (Self-feedback convergence)
 
     The key difference from base HHCRA:
         Base:        L1 → L2 → L3 (one-shot, static)
-        Singularity: L1 → [L2 ↔ L3 ↔ L2 ↔ L3 ...] → convergence (self-catalytic)
+        Experimental: L1 → [L2 ↔ L3 ↔ L2 ↔ L3 ...] → convergence (iterative)
     """
 
     def __init__(self, config: Optional[HHCRAConfig] = None):
@@ -67,26 +67,26 @@ class HHCRASingularity(nn.Module):
         # Innovation 1: Liquid Causal Graph
         self.liquid_graph = LiquidCausalGraph(self.config)
 
-        # Innovation 2: Symbolic Genesis Engine
-        self.symbolic_genesis = SymbolicGenesisEngine(
+        # Innovation 2: Trajectory Invariant Finder
+        self.invariant_finder = TrajectoryInvariantFinder(
             self.config, num_candidates=8
         )
 
-        # Innovation 3: Autocatalytic Network
-        self.autocatalytic = AutocatalyticCausalNet(self.config)
+        # Innovation 3: Autofeedback Network
+        self.iterative_refinement = IterativeRefinementNet(self.config)
 
     # === SINGULARITY TRAINING ===
 
-    def train_singularity(self, observations: torch.Tensor,
+    def train_experimental(self, observations: torch.Tensor,
                           max_cycles: int = 10,
                           verbose: bool = True) -> Dict:
         """
-        Full Singularity training pipeline.
+        Full experimental training pipeline.
 
         Phase 1: Standard staged training (L1, L2, L3)
-        Phase 2: Autocatalytic cycles until convergence
+        Phase 2: Autofeedback cycles until convergence
 
-        The autocatalytic phase is where the magic happens: the system
+        The iterative_refinement phase is where the iterative loop: the system
         discovers its own rules and refines its own structure.
         """
         if verbose:
@@ -102,28 +102,28 @@ class HHCRASingularity(nn.Module):
         self._train_layer2(observations, verbose)
         self._train_layer3(observations, verbose)
 
-        # Phase 2: Autocatalytic evolution
+        # Phase 2: Autofeedback evolution
         if verbose:
-            print("\n--- Phase 2: Autocatalytic Self-Catalytic Evolution ---")
+            print("\n--- Phase 2: Autofeedback Iterative Evolution ---")
 
         # Get latent from trained Layer 1
         with torch.no_grad():
             latent = self.layer1.extract_variables(observations)
 
-        # Sync GNN weights to autocatalytic network
-        self.autocatalytic.gnn.W.data.copy_(self.layer2.gnn.W.data)
+        # Sync GNN weights to iterative_refinement network
+        self.iterative_refinement.gnn.W.data.copy_(self.layer2.gnn.W.data)
 
-        # Run autocatalytic cycles
-        ac_result = self.autocatalytic.run_until_convergence(
+        # Run iterative_refinement cycles
+        ac_result = self.iterative_refinement.run_until_convergence(
             latent, max_cycles=max_cycles, verbose=verbose
         )
 
         # Sync evolved weights back to Layer 2
-        self.layer2.gnn.W.data.copy_(self.autocatalytic.gnn.W.data)
+        self.layer2.gnn.W.data.copy_(self.iterative_refinement.gnn.W.data)
         self.layer2.gnn.prune_to_dag()
 
         if verbose:
-            print("\n" + self.singularity_summary())
+            print("\n" + self.experimental_summary())
 
         return ac_result
 
@@ -215,9 +215,9 @@ class HHCRASingularity(nn.Module):
             'latent': latent,
             'layer2': l2_out,
             'graph': graph,
-            'discovered_rules': list(self.symbolic_genesis.discovered_rules),
+            'discovered_rules': list(self.invariant_finder.discovered_rules),
             'liquid_graph_evolution': self.liquid_graph.get_graph_evolution(),
-            'autocatalytic_converged': self.autocatalytic.convergence_achieved,
+            'iterative_refinement_converged': self.iterative_refinement.convergence_achieved,
         }
 
     def query(self, observations: torch.Tensor, query_type: CausalQueryType,
@@ -231,14 +231,14 @@ class HHCRASingularity(nn.Module):
             traj_detached, self.layer2, **kwargs
         )
 
-        # Enrich with Singularity metadata
-        result['singularity'] = {
-            'discovered_rules': len(self.symbolic_genesis.discovered_rules),
+        # Enrich with Experimental metadata
+        result['experimental'] = {
+            'discovered_rules': len(self.invariant_finder.discovered_rules),
             'novel_rules': sum(
-                1 for r in self.symbolic_genesis.discovered_rules if r.is_novel
+                1 for r in self.invariant_finder.discovered_rules if r.is_novel
             ),
-            'autocatalytic_converged': self.autocatalytic.convergence_achieved,
-            'autocatalytic_cycles': len(self.autocatalytic.cycle_history),
+            'iterative_refinement_converged': self.iterative_refinement.convergence_achieved,
+            'refinement_cycles': len(self.iterative_refinement.cycle_history),
         }
 
         # Route feedback
@@ -251,8 +251,8 @@ class HHCRASingularity(nn.Module):
 
     # === DIAGNOSTICS ===
 
-    def singularity_summary(self) -> str:
-        """Comprehensive summary of the Singularity system state."""
+    def experimental_summary(self) -> str:
+        """Comprehensive summary of the Experimental system state."""
         sg = self.layer2.symbolic_graph()
         diag = self.layer3.generate_diagnostic(sg)
 
@@ -269,24 +269,24 @@ class HHCRASingularity(nn.Module):
             f"(method={self.config.liquid_method})",
             f"  Layer 3: Neuro-Symbolic + HRM",
             "",
-            "Singularity Innovations:",
+            "Experimental Extensions (unvalidated):",
             f"  [1] Liquid Causal Graph: graph evolves as ODE",
             f"      Graph change rate: "
             f"{self.liquid_graph.compute_graph_change_rate():.4f}",
-            f"  [2] Symbolic Genesis: {len(self.symbolic_genesis.discovered_rules)}"
+            f"  [2] Invariant Finder: {len(self.invariant_finder.discovered_rules)}"
             f" rules discovered",
         ]
 
         novel = sum(
-            1 for r in self.symbolic_genesis.discovered_rules if r.is_novel
+            1 for r in self.invariant_finder.discovered_rules if r.is_novel
         )
         lines.append(f"      Novel rules: {novel}")
 
         lines.extend([
-            f"  [3] Autocatalytic Loop: "
-            f"{len(self.autocatalytic.cycle_history)} cycles",
+            f"  [3] Autofeedback Loop: "
+            f"{len(self.iterative_refinement.cycle_history)} cycles",
             f"      Fixed point reached: "
-            f"{self.autocatalytic.convergence_achieved}",
+            f"{self.iterative_refinement.convergence_achieved}",
             "",
             "Learned Causal Graph:",
             f"  Nodes: {len(sg.nodes)} | Edges: {sg.edge_count()} | "
@@ -299,15 +299,15 @@ class HHCRASingularity(nn.Module):
         if sg.edge_count() > 10:
             lines.append(f"    ... ({sg.edge_count() - 10} more)")
 
-        if self.symbolic_genesis.discovered_rules:
+        if self.invariant_finder.discovered_rules:
             lines.extend(["", "Discovered Rules:"])
-            for rule in self.symbolic_genesis.discovered_rules[:5]:
+            for rule in self.invariant_finder.discovered_rules[:5]:
                 tag = "NOVEL" if rule.is_novel else "known"
                 lines.append(
                     f"  [{tag}] {rule.name}: {rule.expression} "
                     f"(conf={rule.confidence:.3f})"
                 )
-            remaining = len(self.symbolic_genesis.discovered_rules) - 5
+            remaining = len(self.invariant_finder.discovered_rules) - 5
             if remaining > 0:
                 lines.append(f"  ... ({remaining} more)")
 
